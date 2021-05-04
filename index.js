@@ -3,7 +3,7 @@ import { createInterface } from 'readline';
 import { google } from 'googleapis';
 import fetch from "node-fetch";
 
-const SPREADSHEET_ID = "1pdZLi3Mc6Jv_nTBlaSyXDHc5dBYgN_olb3Tcn7v3Dsg";
+const SPREADSHEET_ID = "13oAA2yRDtfDAUCJIVSXnfTk7L40KMOJeeHEu9Tw8KQg";
 const FETCH_URL = "http://w3.onlinesurvey.kr/project/quota_ajax.asp";
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]; // If modifying these scopes, delete token.json.
 const TOKEN_PATH = "./token.json"; // The file token.json stores the user's access and refresh tokens, and is created automatically when the authorization flow completes for the first time.
@@ -38,7 +38,7 @@ const fetchOptions = {
   // Load client secrets from a local file.
   readFile(CREDENTIALS_PATH, (error, content) => {
     if (error) {
-      return console.log(`Error loading client secret file: ${error}`);
+      return console.error(`Error loading client secret file: ${error}`);
     }
 
     const credentials = JSON.parse(content);
@@ -109,7 +109,7 @@ async function getCountries() {
   }
 
   const countries = await countriesResponse.json();
-  //countries = countries.filter(obj => obj["PKEY"] === "2103022_SG" || obj["PKEY"] === "2103022_MX"); // Filter the countries for testing
+  //countries = countries.filter(obj => obj["PKEY"] === "2103022_SG"); // Filter the countries for testing
   for(const country of countries) {
     console.log(`Fetching data for country: ${country["country_name"]}...`);
     const key = country["PKEY"];
@@ -277,41 +277,103 @@ function getBrandByOwnerRows(tableName, countryData) {
   return rows;
 }
 
+async function addTabs(api, spreadsheet) {
+  const addSheetRequests = [];
+
+  for(const key of Object.keys(countriesByKey)) {
+    const country = countriesByKey[key];
+    const tabName = `${country["number"]}. ${country["code"]}`;
+    const exists = spreadsheet.data.sheets.some(sheet => sheet.properties.title === tabName);
+    if(!exists) {
+      addSheetRequests.push({
+        addSheet: {
+          properties: {
+            title: tabName
+          }
+        }
+      });
+    }
+  }
+
+  if(addSheetRequests.length > 0) {
+    console.log("Adding tabs...");
+    const [sheetUpdateError, sheetUpdateResponse] = await handler(api.spreadsheets.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      resource: { requests: addSheetRequests }
+    }));
+    if(sheetUpdateError) {
+      console.error(`Error: ${sheetUpdateError.errors[0].message}`);
+    }
+    console.log("Finished adding tabs!");
+  }
+
+  return addSheetRequests.length;
+}
+
 async function updateTabs(auth) {
+  console.log("Updating tabs...");
   const api = google.sheets({ version: 'v4', auth });
   let [getSpreadsheetError, spreadsheet] = await handler(api.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID }));
   if(getSpreadsheetError) {
-    return console.error(`Could not get spreadsheet with id ${SPREADSHEET_ID}`);
+    return console.error(`Error: ${getSpreadsheetError.errors[0].message}`);
   }
 
-  for(const key of Object.keys(countriesByKey)) {    
-    const country = countriesByKey[key];
-    const tabName = `${country["number"]}. ${country["code"]}`
-    const exists = spreadsheet.data.sheets.some(sheet => sheet.properties.title === tabName);
-    
-    if(!exists) {
-      console.log(`Adding tab ${tabName}...`);
-      const [sheetUpdateError, sheetUpdateResponse] = await handler(api.spreadsheets.batchUpdate({
-        spreadsheetId: SPREADSHEET_ID,
-        resource: {
-          requests: [{
-            addSheet: {
-              properties: {
-                title: tabName
-              }
-            }
-          }]
-        }
-      }));
-      if(sheetUpdateError) {
-        return console.error(`Could not add tab ${tabName} to spreadsheet with id ${SPREADSHEET_ID}...`);
-      }      
-      console.log(`Finished adding tab ${tabName}!`);
-    }
+  const numberOfAddedSheets = await addTabs(api, spreadsheet);
 
-    console.log(`Updating tab ${tabName}...`);
-
+  if(numberOfAddedSheets > 0) {
     [getSpreadsheetError, spreadsheet] = await handler(api.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID }));
+    if(getSpreadsheetError) {
+      return console.error(`Error: ${getSpreadsheetError.errors[0].message}`);
+    }
+  }
+
+  const allCountriesValues = [];
+  const allCountriesMergeRequests = [];
+  const allCountriesStyleRequests = [];
+
+  const borderStyle = {
+    style: "SOLID",
+    color: {
+      red: 0.0,
+      green: 0.0,
+      blue: 0.0,
+      alpha: 1.0
+    }
+  };
+  const borders = { top: borderStyle, right: borderStyle, bottom: borderStyle, left: borderStyle };
+  const headerStyle = {
+    cell: {
+      userEnteredFormat: {
+        backgroundColor: {
+          red: 239 / 255,
+          green: 239 / 255,
+          blue: 239 / 255
+        },
+        horizontalAlignment: "CENTER",
+        textFormat: {
+          bold: true,
+        }
+      }
+    },
+    fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"
+  };
+  const firstColumnStyle = {
+    cell: {
+      userEnteredFormat: {
+        backgroundColor: {
+          red: 239 / 255,
+          green: 239 / 255,
+          blue: 239 / 255
+        }
+      }
+    },
+    fields: "userEnteredFormat(backgroundColor)"
+  };
+  const footerStyle = { ...firstColumnStyle };
+
+  for(const key of Object.keys(countriesByKey)) {
+    const country = countriesByKey[key];
+    const tabName = `${country["number"]}. ${country["code"]}`;
     const tabId = spreadsheet.data.sheets.find(object => tabName === object.properties.title).properties.sheetId;
 
     const genderRows = getTableRows("Gender", country.data["Gender"]);
@@ -354,468 +416,435 @@ async function updateTabs(auth) {
     const brandByOwnerColumnCount = brandByOwnerRows[0].length;
     const brandByOwnerRange = `A${brandByOwnerRangeStart}:${String.fromCharCode(64 + brandByOwnerColumnCount)}${brandByOwnerRangeEnd}`;
 
-
-    await handler(api.spreadsheets.values.batchUpdate({
-      spreadsheetId: SPREADSHEET_ID,
-      requestBody: {
-        valueInputOption: "USER_ENTERED",
-        data: [
-          {
-            range: `${tabName}!${genderRange}`,
-            values: genderRows
-          },
-          {
-            range: `${tabName}!${ageRange}`,
-            values: ageRows
-          },
-          {
-            range: `${tabName}!${brandRange}`,
-            values: brandRows
-          },
-          {
-            range: `${tabName}!${regionRange}`,
-            values: regionRows
-          },
-          {
-            range: `${tabName}!${segmentRange}`,
-            values: segmentRows
-          },
-          {
-            range: `${tabName}!${segmentByOwnerRange}`,
-            values: segmentByOwnerRows
-          },
-          {
-            range: `${tabName}!${segmentByIntenderRange}`,
-            values: segmentByIntenderRows
-          },
-          {
-            range: `${tabName}!F${segmentRangeStart - 1}`,
-            values: [["Owner"]]
-          },
-          {
-            range: `${tabName}!J${segmentRangeStart - 1}`,
-            values: [["Intender"]]
-          },
-          {
-            range: `${tabName}!${brandByOwnerRange}`,
-            values: brandByOwnerRows
-          }
-        ] 
+    
+    const values = [
+      {
+        range: `${tabName}!${genderRange}`,
+        values: genderRows
+      },
+      {
+        range: `${tabName}!${ageRange}`,
+        values: ageRows
+      },
+      {
+        range: `${tabName}!${brandRange}`,
+        values: brandRows
+      },
+      {
+        range: `${tabName}!${regionRange}`,
+        values: regionRows
+      },
+      {
+        range: `${tabName}!${segmentRange}`,
+        values: segmentRows
+      },
+      {
+        range: `${tabName}!${segmentByOwnerRange}`,
+        values: segmentByOwnerRows
+      },
+      {
+        range: `${tabName}!${segmentByIntenderRange}`,
+        values: segmentByIntenderRows
+      },
+      {
+        range: `${tabName}!F${segmentRangeStart - 1}`,
+        values: [["Owner"]]
+      },
+      {
+        range: `${tabName}!J${segmentRangeStart - 1}`,
+        values: [["Intender"]]
+      },
+      {
+        range: `${tabName}!${brandByOwnerRange}`,
+        values: brandByOwnerRows
       }
-    }));
+    ];
 
-    await handler(api.spreadsheets.batchUpdate({
-      spreadsheetId: SPREADSHEET_ID,
-      resource: {
-        requests: [
-          {
-            mergeCells: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: segmentRangeStart - 2, 
-                endRowIndex: segmentRangeStart - 1, 
-                startColumnIndex: 5, 
-                endColumnIndex: 9
-              },
-              mergeType: "MERGE_ROWS"
-            }
+    const mergeRequests = [
+      {
+        mergeCells: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: segmentRangeStart - 2, 
+            endRowIndex: segmentRangeStart - 1, 
+            startColumnIndex: 5, 
+            endColumnIndex: 9
           },
-          {
-            mergeCells: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: segmentRangeStart - 2, 
-                endRowIndex: segmentRangeStart - 1, 
-                startColumnIndex: 9, 
-                endColumnIndex: 13
-              },
-              mergeType: "MERGE_ROWS"
-            }
-          },
-          {
-            mergeCells: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: segmentRangeStart - 2, 
-                endRowIndex: segmentRangeStart, 
-                startColumnIndex: 0, 
-                endColumnIndex: 5
-              },
-              mergeType: "MERGE_COLUMNS"
-            }
-          }
-        ]
-      }
-    }));
-
-    const borderStyle = {
-      style: "SOLID",
-      color: {
-        red: 0.0,
-        green: 0.0,
-        blue: 0.0,
-        alpha: 1.0
-      }
-    };
-    const borders = { top: borderStyle, right: borderStyle, bottom: borderStyle, left: borderStyle };
-    const headerStyle = {
-      cell: {
-        userEnteredFormat: {
-          backgroundColor: {
-            red: 239 / 255,
-            green: 239 / 255,
-            blue: 239 / 255
-          },
-          horizontalAlignment: "CENTER",
-          textFormat: {
-            bold: true,
-          }
+          mergeType: "MERGE_ROWS"
         }
       },
-      fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"
-    };
-    const firstColumnStyle = {
-      cell: {
-        userEnteredFormat: {
-          backgroundColor: {
-            red: 239 / 255,
-            green: 239 / 255,
-            blue: 239 / 255
-          }
+      {
+        mergeCells: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: segmentRangeStart - 2, 
+            endRowIndex: segmentRangeStart - 1, 
+            startColumnIndex: 9, 
+            endColumnIndex: 13
+          },
+          mergeType: "MERGE_ROWS"
         }
       },
-      fields: "userEnteredFormat(backgroundColor)"
-    };
-    const footerStyle = { ...firstColumnStyle };
-
-    await handler(api.spreadsheets.batchUpdate({
-      spreadsheetId: SPREADSHEET_ID,
-      resource: {
-        requests: [
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: segmentRangeStart - 2, 
-                endRowIndex: segmentRangeStart, 
-                startColumnIndex: 0, 
-                endColumnIndex: 5
-              },
-              cell: {
-                userEnteredFormat: {
-                  verticalAlignment: "MIDDLE"
-                }
-              },
-              fields: "userEnteredFormat.verticalAlignment"
-            }
+      {
+        mergeCells: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: segmentRangeStart - 2, 
+            endRowIndex: segmentRangeStart, 
+            startColumnIndex: 0, 
+            endColumnIndex: 5
           },
-          // Header
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: genderRangeStart - 1, 
-                endRowIndex: genderRangeStart, 
-                startColumnIndex: 0, 
-                endColumnIndex: 5
-              },
-              ...headerStyle
-            }
-          },
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: ageRangeStart - 1, 
-                endRowIndex: ageRangeStart, 
-                startColumnIndex: 0, 
-                endColumnIndex: 5
-              },
-              ...headerStyle
-            }
-          },
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: brandRangeStart - 1, 
-                endRowIndex: brandRangeStart, 
-                startColumnIndex: 6, 
-                endColumnIndex: 11
-              },
-              ...headerStyle
-            }
-          },
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: segmentRangeStart - 2, 
-                endRowIndex: segmentRangeStart, 
-                startColumnIndex: 0, 
-                endColumnIndex: 13
-              },
-              ...headerStyle
-            }
-          },
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: brandByOwnerRangeStart - 1,
-                endRowIndex: brandByOwnerRangeStart,
-                startColumnIndex: 0, 
-                endColumnIndex: brandByOwnerColumnCount
-              },
-              ...headerStyle
-            }
-          },
-          // First column except header and footer
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: genderRangeStart,
-                endRowIndex: genderRangeEnd - 1,
-                startColumnIndex: 0, 
-                endColumnIndex: 1
-              },
-              ...firstColumnStyle
-            }
-          },
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: ageRangeStart,
-                endRowIndex: ageRangeEnd - 1,
-                startColumnIndex: 0, 
-                endColumnIndex: 1
-              },
-              ...firstColumnStyle
-            }
-          },
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: brandRangeStart,
-                endRowIndex: brandRangeEnd - 1,
-                startColumnIndex: 6, 
-                endColumnIndex: 7
-              },
-              ...firstColumnStyle
-            }
-          },
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: segmentRangeStart,
-                endRowIndex: segmentRangeEnd - 1,
-                startColumnIndex: 0, 
-                endColumnIndex: 1
-              },
-              ...firstColumnStyle
-            }
-          },
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: brandByOwnerRangeStart,
-                endRowIndex: brandByOwnerRangeEnd - 1,
-                startColumnIndex: 0, 
-                endColumnIndex: 1
-              },
-              ...firstColumnStyle
-            }
-          },
-          // Footer
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: genderRangeEnd - 1,
-                endRowIndex: genderRangeEnd,
-                startColumnIndex: 0, 
-                endColumnIndex: 5
-              },
-              ...footerStyle
-            }
-          },
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: ageRangeEnd - 1,
-                endRowIndex: ageRangeEnd,
-                startColumnIndex: 0, 
-                endColumnIndex: 5
-              },
-              ...footerStyle
-            }
-          },
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: brandRangeEnd - 1,
-                endRowIndex: brandRangeEnd,
-                startColumnIndex: 6, 
-                endColumnIndex: 11
-              },
-              ...footerStyle
-            }
-          },
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: segmentRangeEnd - 1,
-                endRowIndex: segmentRangeEnd,
-                startColumnIndex: 0, 
-                endColumnIndex: 13
-              },
-              ...footerStyle
-            }
-          },
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: brandByOwnerRangeEnd - 1,
-                endRowIndex: brandByOwnerRangeEnd,
-                startColumnIndex: 0, 
-                endColumnIndex: brandByOwnerColumnCount
-              },
-              ...footerStyle
-            }
-          },
-          // Borders 
-          {
-            updateBorders: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: genderRangeStart - 1, 
-                endRowIndex: genderRangeEnd, 
-                startColumnIndex: 0, 
-                endColumnIndex: 5
-              },
-              ...borders
-            }
-          },
-          {
-            updateBorders: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: ageRangeStart - 1, 
-                endRowIndex: ageRangeEnd, 
-                startColumnIndex: 0, 
-                endColumnIndex: 5
-              },
-              ...borders
-            }
-          },
-          {
-            updateBorders: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: brandRangeStart - 1, 
-                endRowIndex: brandRangeEnd, 
-                startColumnIndex: 6, 
-                endColumnIndex: 11
-              },
-              ...borders
-            }
-          },
-          {
-            updateBorders: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: segmentRangeStart - 2, 
-                endRowIndex: segmentRangeEnd, 
-                startColumnIndex: 0, 
-                endColumnIndex: 13
-              },
-              ...borders
-            }
-          },
-          {
-            updateBorders: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: brandByOwnerRangeStart - 1, 
-                endRowIndex: brandByOwnerRangeEnd, 
-                startColumnIndex: 0, 
-                endColumnIndex: brandByOwnerColumnCount
-              },
-              ...borders
-            },
-          }
-        ]
+          mergeType: "MERGE_COLUMNS"
+        }
       }
-    }));
+    ];
+
+    const styleRequests = [
+      {
+        repeatCell: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: segmentRangeStart - 2, 
+            endRowIndex: segmentRangeStart, 
+            startColumnIndex: 0, 
+            endColumnIndex: 5
+          },
+          cell: {
+            userEnteredFormat: {
+              verticalAlignment: "MIDDLE"
+            }
+          },
+          fields: "userEnteredFormat.verticalAlignment"
+        }
+      },
+      // Header
+      {
+        repeatCell: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: genderRangeStart - 1, 
+            endRowIndex: genderRangeStart, 
+            startColumnIndex: 0, 
+            endColumnIndex: 5
+          },
+          ...headerStyle
+        }
+      },
+      {
+        repeatCell: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: ageRangeStart - 1, 
+            endRowIndex: ageRangeStart, 
+            startColumnIndex: 0, 
+            endColumnIndex: 5
+          },
+          ...headerStyle
+        }
+      },
+      {
+        repeatCell: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: brandRangeStart - 1, 
+            endRowIndex: brandRangeStart, 
+            startColumnIndex: 6, 
+            endColumnIndex: 11
+          },
+          ...headerStyle
+        }
+      },
+      {
+        repeatCell: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: segmentRangeStart - 2, 
+            endRowIndex: segmentRangeStart, 
+            startColumnIndex: 0, 
+            endColumnIndex: 13
+          },
+          ...headerStyle
+        }
+      },
+      {
+        repeatCell: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: brandByOwnerRangeStart - 1,
+            endRowIndex: brandByOwnerRangeStart,
+            startColumnIndex: 0, 
+            endColumnIndex: brandByOwnerColumnCount
+          },
+          ...headerStyle
+        }
+      },
+      // First column except header and footer
+      {
+        repeatCell: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: genderRangeStart,
+            endRowIndex: genderRangeEnd - 1,
+            startColumnIndex: 0, 
+            endColumnIndex: 1
+          },
+          ...firstColumnStyle
+        }
+      },
+      {
+        repeatCell: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: ageRangeStart,
+            endRowIndex: ageRangeEnd - 1,
+            startColumnIndex: 0, 
+            endColumnIndex: 1
+          },
+          ...firstColumnStyle
+        }
+      },
+      {
+        repeatCell: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: brandRangeStart,
+            endRowIndex: brandRangeEnd - 1,
+            startColumnIndex: 6, 
+            endColumnIndex: 7
+          },
+          ...firstColumnStyle
+        }
+      },
+      {
+        repeatCell: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: segmentRangeStart,
+            endRowIndex: segmentRangeEnd - 1,
+            startColumnIndex: 0, 
+            endColumnIndex: 1
+          },
+          ...firstColumnStyle
+        }
+      },
+      {
+        repeatCell: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: brandByOwnerRangeStart,
+            endRowIndex: brandByOwnerRangeEnd - 1,
+            startColumnIndex: 0, 
+            endColumnIndex: 1
+          },
+          ...firstColumnStyle
+        }
+      },
+      // Footer
+      {
+        repeatCell: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: genderRangeEnd - 1,
+            endRowIndex: genderRangeEnd,
+            startColumnIndex: 0, 
+            endColumnIndex: 5
+          },
+          ...footerStyle
+        }
+      },
+      {
+        repeatCell: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: ageRangeEnd - 1,
+            endRowIndex: ageRangeEnd,
+            startColumnIndex: 0, 
+            endColumnIndex: 5
+          },
+          ...footerStyle
+        }
+      },
+      {
+        repeatCell: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: brandRangeEnd - 1,
+            endRowIndex: brandRangeEnd,
+            startColumnIndex: 6, 
+            endColumnIndex: 11
+          },
+          ...footerStyle
+        }
+      },
+      {
+        repeatCell: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: segmentRangeEnd - 1,
+            endRowIndex: segmentRangeEnd,
+            startColumnIndex: 0, 
+            endColumnIndex: 13
+          },
+          ...footerStyle
+        }
+      },
+      {
+        repeatCell: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: brandByOwnerRangeEnd - 1,
+            endRowIndex: brandByOwnerRangeEnd,
+            startColumnIndex: 0, 
+            endColumnIndex: brandByOwnerColumnCount
+          },
+          ...footerStyle
+        }
+      },
+      // Borders 
+      {
+        updateBorders: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: genderRangeStart - 1, 
+            endRowIndex: genderRangeEnd, 
+            startColumnIndex: 0, 
+            endColumnIndex: 5
+          },
+          ...borders
+        }
+      },
+      {
+        updateBorders: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: ageRangeStart - 1, 
+            endRowIndex: ageRangeEnd, 
+            startColumnIndex: 0, 
+            endColumnIndex: 5
+          },
+          ...borders
+        }
+      },
+      {
+        updateBorders: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: brandRangeStart - 1, 
+            endRowIndex: brandRangeEnd, 
+            startColumnIndex: 6, 
+            endColumnIndex: 11
+          },
+          ...borders
+        }
+      },
+      {
+        updateBorders: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: segmentRangeStart - 2, 
+            endRowIndex: segmentRangeEnd, 
+            startColumnIndex: 0, 
+            endColumnIndex: 13
+          },
+          ...borders
+        }
+      },
+      {
+        updateBorders: {
+          range: {
+            sheetId: tabId,
+            startRowIndex: brandByOwnerRangeStart - 1, 
+            endRowIndex: brandByOwnerRangeEnd, 
+            startColumnIndex: 0, 
+            endColumnIndex: brandByOwnerColumnCount
+          },
+          ...borders
+        },
+      }
+    ];
 
     // Update region table only for countries that have regions
     if(regionRows.length > 0) {
-      await handler(api.spreadsheets.batchUpdate({
-        spreadsheetId: SPREADSHEET_ID,
-        resource: {
-          requests: [
-            {
-              repeatCell: {
-                range: {
-                  sheetId: tabId,
-                  startRowIndex: regionRangeStart - 1, 
-                  endRowIndex: regionRangeStart, 
-                  startColumnIndex: 0, 
-                  endColumnIndex: 5
-                },
-                ...headerStyle
-              }
+      const regionStyleRequests = [
+        {
+          repeatCell: {
+            range: {
+              sheetId: tabId,
+              startRowIndex: regionRangeStart - 1, 
+              endRowIndex: regionRangeStart, 
+              startColumnIndex: 0, 
+              endColumnIndex: 5
             },
-            {
-              repeatCell: {
-                range: {
-                  sheetId: tabId,
-                  startRowIndex: regionRangeStart,
-                  endRowIndex: regionRangeEnd - 1,
-                  startColumnIndex: 0, 
-                  endColumnIndex: 1
-                },
-                ...firstColumnStyle
-              }
+            ...headerStyle
+          }
+        },
+        {
+          repeatCell: {
+            range: {
+              sheetId: tabId,
+              startRowIndex: regionRangeStart,
+              endRowIndex: regionRangeEnd - 1,
+              startColumnIndex: 0, 
+              endColumnIndex: 1
             },
-            {
-              repeatCell: {
-                range: {
-                  sheetId: tabId,
-                  startRowIndex: regionRangeEnd - 1,
-                  endRowIndex: regionRangeEnd,
-                  startColumnIndex: 0, 
-                  endColumnIndex: 5
-                },
-                ...footerStyle
-              }
+            ...firstColumnStyle
+          }
+        },
+        {
+          repeatCell: {
+            range: {
+              sheetId: tabId,
+              startRowIndex: regionRangeEnd - 1,
+              endRowIndex: regionRangeEnd,
+              startColumnIndex: 0, 
+              endColumnIndex: 5
             },
-            {
-              updateBorders: {
-                range: {
-                  sheetId: tabId,
-                  startRowIndex: regionRangeStart - 1, 
-                  endRowIndex: regionRangeEnd, 
-                  startColumnIndex: 0, 
-                  endColumnIndex: 5
-                },
-                ...borders
-              }
-            }
-          ]
+            ...footerStyle
+          }
+        },
+        {
+          updateBorders: {
+            range: {
+              sheetId: tabId,
+              startRowIndex: regionRangeStart - 1, 
+              endRowIndex: regionRangeEnd, 
+              startColumnIndex: 0, 
+              endColumnIndex: 5
+            },
+            ...borders
+          }
         }
-      }));
+      ];
+      allCountriesStyleRequests.push(...regionStyleRequests);
     }
-    console.log(`Finished updating tab ${tabName}!`);
+    allCountriesValues.push(...values);
+    allCountriesMergeRequests.push(...mergeRequests);
+    allCountriesStyleRequests.push(...styleRequests);
   }
-  console.log("Finished updating all tabs!");
+
+  const [valueUpdateError] = await handler(api.spreadsheets.values.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: { valueInputOption: "USER_ENTERED", data: allCountriesValues }
+  }));
+  if(valueUpdateError) {
+    console.error(`Error: ${valueUpdateError.errors[0].message}`);
+  }
+
+  const [mergeUpdateError] = await handler(api.spreadsheets.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    resource: { requests: allCountriesMergeRequests }
+  }));
+  if(mergeUpdateError) {
+    console.error(`Error: ${mergeUpdateError.errors[0].message}`);
+  }
+
+  const [styleUpdateError] = await handler(api.spreadsheets.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    resource: { requests: allCountriesStyleRequests }
+  }));
+  if(styleUpdateError) {
+    console.error(`Error: ${styleUpdateError.errors[0].message}`);
+  }
+
+  console.log("Finished updating tabs!");
 }
