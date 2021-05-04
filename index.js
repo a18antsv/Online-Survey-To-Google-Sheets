@@ -109,7 +109,7 @@ async function getCountries() {
   }
 
   const countries = await countriesResponse.json();
-  //countries = countries.filter(obj => obj["PKEY"] === "2103022_SG"); 
+  //countries = countries.filter(obj => obj["PKEY"] === "2103022_SG" || obj["PKEY"] === "2103022_MX"); // Filter the countries for testing
   for(const country of countries) {
     console.log(`Fetching data for country: ${country["country_name"]}...`);
     const key = country["PKEY"];
@@ -340,7 +340,7 @@ async function updateTabs(auth) {
     const regionRange = `A${regionRangeStart}:E${regionRangeEnd}`;
 
     const segmentRangeStart = regionRangeEnd + 2 + 1;
-    const segmentRangeEnd = segmentRangeStart + segmentRows.length - 1 + 1;
+    const segmentRangeEnd = segmentRangeStart + segmentRows.length - 1;
     const segmentRange = `A${segmentRangeStart}:E${segmentRangeEnd}`;
     const segmentByOwnerRange = `F${segmentRangeStart}:I${segmentRangeEnd}`;
     const segmentByIntenderRange = `J${segmentRangeStart}:M${segmentRangeEnd}`;
@@ -348,6 +348,11 @@ async function updateTabs(auth) {
     const brandRangeStart = 1;
     const brandRangeEnd = brandRangeStart + brandRows.length - 1;
     const brandRange = `G${brandRangeStart}:K${brandRangeEnd}`;
+
+    const brandByOwnerRangeStart = segmentRangeEnd + 2;
+    const brandByOwnerRangeEnd = brandByOwnerRangeStart + brandByOwnerRows.length - 1;
+    const brandByOwnerColumnCount = brandByOwnerRows[0].length;
+    const brandByOwnerRange = `A${brandByOwnerRangeStart}:${String.fromCharCode(64 + brandByOwnerColumnCount)}${brandByOwnerRangeEnd}`;
 
 
     await handler(api.spreadsheets.values.batchUpdate({
@@ -392,7 +397,7 @@ async function updateTabs(auth) {
             values: [["Intender"]]
           },
           {
-            range: `${tabName}!A${segmentRangeEnd + 1}`,
+            range: `${tabName}!${brandByOwnerRange}`,
             values: brandByOwnerRows
           }
         ] 
@@ -443,44 +448,50 @@ async function updateTabs(auth) {
       }
     }));
 
+    const borderStyle = {
+      style: "SOLID",
+      color: {
+        red: 0.0,
+        green: 0.0,
+        blue: 0.0,
+        alpha: 1.0
+      }
+    };
+    const borders = { top: borderStyle, right: borderStyle, bottom: borderStyle, left: borderStyle };
+    const headerStyle = {
+      cell: {
+        userEnteredFormat: {
+          backgroundColor: {
+            red: 239 / 255,
+            green: 239 / 255,
+            blue: 239 / 255
+          },
+          horizontalAlignment: "CENTER",
+          textFormat: {
+            bold: true,
+          }
+        }
+      },
+      fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"
+    };
+    const firstColumnStyle = {
+      cell: {
+        userEnteredFormat: {
+          backgroundColor: {
+            red: 239 / 255,
+            green: 239 / 255,
+            blue: 239 / 255
+          }
+        }
+      },
+      fields: "userEnteredFormat(backgroundColor)"
+    };
+    const footerStyle = { ...firstColumnStyle };
+
     await handler(api.spreadsheets.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       resource: {
         requests: [
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: segmentRangeStart - 2, 
-                endRowIndex: segmentRangeStart - 1, 
-                startColumnIndex: 5, 
-                endColumnIndex: 9
-              },
-              cell: {
-                userEnteredFormat: {
-                  horizontalAlignment: "CENTER"
-                }
-              },
-              fields: "userEnteredFormat.horizontalAlignment"
-            }
-          },
-          {
-            repeatCell: {
-              range: {
-                sheetId: tabId,
-                startRowIndex: segmentRangeStart - 2, 
-                endRowIndex: segmentRangeStart - 1, 
-                startColumnIndex: 9, 
-                endColumnIndex: 13
-              },
-              cell: {
-                userEnteredFormat: {
-                  horizontalAlignment: "CENTER"
-                }
-              },
-              fields: "userEnteredFormat.horizontalAlignment"
-            }
-          },
           {
             repeatCell: {
               range: {
@@ -497,11 +508,313 @@ async function updateTabs(auth) {
               },
               fields: "userEnteredFormat.verticalAlignment"
             }
+          },
+          // Header
+          {
+            repeatCell: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: genderRangeStart - 1, 
+                endRowIndex: genderRangeStart, 
+                startColumnIndex: 0, 
+                endColumnIndex: 5
+              },
+              ...headerStyle
+            }
+          },
+          {
+            repeatCell: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: ageRangeStart - 1, 
+                endRowIndex: ageRangeStart, 
+                startColumnIndex: 0, 
+                endColumnIndex: 5
+              },
+              ...headerStyle
+            }
+          },
+          {
+            repeatCell: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: brandRangeStart - 1, 
+                endRowIndex: brandRangeStart, 
+                startColumnIndex: 6, 
+                endColumnIndex: 11
+              },
+              ...headerStyle
+            }
+          },
+          {
+            repeatCell: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: segmentRangeStart - 2, 
+                endRowIndex: segmentRangeStart, 
+                startColumnIndex: 0, 
+                endColumnIndex: 13
+              },
+              ...headerStyle
+            }
+          },
+          {
+            repeatCell: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: brandByOwnerRangeStart - 1,
+                endRowIndex: brandByOwnerRangeStart,
+                startColumnIndex: 0, 
+                endColumnIndex: brandByOwnerColumnCount
+              },
+              ...headerStyle
+            }
+          },
+          // First column except header and footer
+          {
+            repeatCell: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: genderRangeStart,
+                endRowIndex: genderRangeEnd - 1,
+                startColumnIndex: 0, 
+                endColumnIndex: 1
+              },
+              ...firstColumnStyle
+            }
+          },
+          {
+            repeatCell: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: ageRangeStart,
+                endRowIndex: ageRangeEnd - 1,
+                startColumnIndex: 0, 
+                endColumnIndex: 1
+              },
+              ...firstColumnStyle
+            }
+          },
+          {
+            repeatCell: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: brandRangeStart,
+                endRowIndex: brandRangeEnd - 1,
+                startColumnIndex: 6, 
+                endColumnIndex: 7
+              },
+              ...firstColumnStyle
+            }
+          },
+          {
+            repeatCell: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: segmentRangeStart,
+                endRowIndex: segmentRangeEnd - 1,
+                startColumnIndex: 0, 
+                endColumnIndex: 1
+              },
+              ...firstColumnStyle
+            }
+          },
+          {
+            repeatCell: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: brandByOwnerRangeStart,
+                endRowIndex: brandByOwnerRangeEnd - 1,
+                startColumnIndex: 0, 
+                endColumnIndex: 1
+              },
+              ...firstColumnStyle
+            }
+          },
+          // Footer
+          {
+            repeatCell: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: genderRangeEnd - 1,
+                endRowIndex: genderRangeEnd,
+                startColumnIndex: 0, 
+                endColumnIndex: 5
+              },
+              ...footerStyle
+            }
+          },
+          {
+            repeatCell: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: ageRangeEnd - 1,
+                endRowIndex: ageRangeEnd,
+                startColumnIndex: 0, 
+                endColumnIndex: 5
+              },
+              ...footerStyle
+            }
+          },
+          {
+            repeatCell: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: brandRangeEnd - 1,
+                endRowIndex: brandRangeEnd,
+                startColumnIndex: 6, 
+                endColumnIndex: 11
+              },
+              ...footerStyle
+            }
+          },
+          {
+            repeatCell: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: segmentRangeEnd - 1,
+                endRowIndex: segmentRangeEnd,
+                startColumnIndex: 0, 
+                endColumnIndex: 13
+              },
+              ...footerStyle
+            }
+          },
+          {
+            repeatCell: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: brandByOwnerRangeEnd - 1,
+                endRowIndex: brandByOwnerRangeEnd,
+                startColumnIndex: 0, 
+                endColumnIndex: brandByOwnerColumnCount
+              },
+              ...footerStyle
+            }
+          },
+          // Borders 
+          {
+            updateBorders: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: genderRangeStart - 1, 
+                endRowIndex: genderRangeEnd, 
+                startColumnIndex: 0, 
+                endColumnIndex: 5
+              },
+              ...borders
+            }
+          },
+          {
+            updateBorders: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: ageRangeStart - 1, 
+                endRowIndex: ageRangeEnd, 
+                startColumnIndex: 0, 
+                endColumnIndex: 5
+              },
+              ...borders
+            }
+          },
+          {
+            updateBorders: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: brandRangeStart - 1, 
+                endRowIndex: brandRangeEnd, 
+                startColumnIndex: 6, 
+                endColumnIndex: 11
+              },
+              ...borders
+            }
+          },
+          {
+            updateBorders: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: segmentRangeStart - 2, 
+                endRowIndex: segmentRangeEnd, 
+                startColumnIndex: 0, 
+                endColumnIndex: 13
+              },
+              ...borders
+            }
+          },
+          {
+            updateBorders: {
+              range: {
+                sheetId: tabId,
+                startRowIndex: brandByOwnerRangeStart - 1, 
+                endRowIndex: brandByOwnerRangeEnd, 
+                startColumnIndex: 0, 
+                endColumnIndex: brandByOwnerColumnCount
+              },
+              ...borders
+            },
           }
         ]
       }
     }));
 
+    // Update region table only for countries that have regions
+    if(regionRows.length > 0) {
+      await handler(api.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        resource: {
+          requests: [
+            {
+              repeatCell: {
+                range: {
+                  sheetId: tabId,
+                  startRowIndex: regionRangeStart - 1, 
+                  endRowIndex: regionRangeStart, 
+                  startColumnIndex: 0, 
+                  endColumnIndex: 5
+                },
+                ...headerStyle
+              }
+            },
+            {
+              repeatCell: {
+                range: {
+                  sheetId: tabId,
+                  startRowIndex: regionRangeStart,
+                  endRowIndex: regionRangeEnd - 1,
+                  startColumnIndex: 0, 
+                  endColumnIndex: 1
+                },
+                ...firstColumnStyle
+              }
+            },
+            {
+              repeatCell: {
+                range: {
+                  sheetId: tabId,
+                  startRowIndex: regionRangeEnd - 1,
+                  endRowIndex: regionRangeEnd,
+                  startColumnIndex: 0, 
+                  endColumnIndex: 5
+                },
+                ...footerStyle
+              }
+            },
+            {
+              updateBorders: {
+                range: {
+                  sheetId: tabId,
+                  startRowIndex: regionRangeStart - 1, 
+                  endRowIndex: regionRangeEnd, 
+                  startColumnIndex: 0, 
+                  endColumnIndex: 5
+                },
+                ...borders
+              }
+            }
+          ]
+        }
+      }));
+    }
     console.log(`Finished updating tab ${tabName}!`);
   }
   console.log("Finished updating all tabs!");
