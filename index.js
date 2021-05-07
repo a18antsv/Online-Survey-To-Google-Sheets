@@ -174,8 +174,8 @@ async function getCountryData(key) {
     }
     accumulator[currentObject["grp"]].push({
       ...currentObject,
-      percent: ((currentObject["com_cnt"] / currentObject["cnt"]) * 100).toFixed(2),
-      remaining: currentObject["cnt"] - currentObject["com_cnt"]
+      percent: ((currentObject["com_cnt"] / currentObject["ori_cnt"]) * 100).toFixed(2),
+      remaining: currentObject["ori_cnt"] - currentObject["com_cnt"]
     });
     return accumulator;
   }, {}); 
@@ -190,7 +190,7 @@ function getTableRows(tableName, tableRowsObject, removeFirst = false) {
   const headerRow = [tableName, "Quota", "Achieved (N)", "Achieved (%)", "Remaining"];
 
   for(const tableRowObject of tableRowsObject) {
-    const { ANS, label, cnt: quota, com_cnt: achievedNumber, percent: achievedPercent, remaining } = tableRowObject;
+    const { ANS, label, ori_cnt: quota, com_cnt: achievedNumber, percent: achievedPercent, remaining } = tableRowObject;
     rows.push([`${ANS}. ${label}`, parseInt(quota), parseInt(achievedNumber), parseFloat(achievedPercent), parseInt(remaining)]);
   }
 
@@ -241,7 +241,7 @@ function getBrandByOwnerRows(tableName, countryData) {
       }
       for(const brandByOwner of countryData["Brand by OWNER"]) {
         if(brandObjectDataObject["LABEL"] === brandByOwner["label"]) {
-          brandByOwnerByBrandLabel[brandLabel]["quota"] = brandByOwner["cnt"];
+          brandByOwnerByBrandLabel[brandLabel]["quota"] = brandByOwner["ori_cnt"];
         }
       }
     }
