@@ -3,7 +3,7 @@ import { createInterface } from 'readline';
 import { google } from 'googleapis';
 import fetch from "node-fetch";
 
-const SPREADSHEET_ID = "13oAA2yRDtfDAUCJIVSXnfTk7L40KMOJeeHEu9Tw8KQg";
+const SPREADSHEET_ID = "1zJP895A7Hwt_bJPsTVQDmHy6Fi4Ii80NaqMW9ZilcAU";
 const FETCH_URL = "http://w3.onlinesurvey.kr/project/quota_ajax.asp";
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]; // If modifying these scopes, delete token.json.
 const TOKEN_PATH = "./token.json"; // The file token.json stores the user's access and refresh tokens, and is created automatically when the authorization flow completes for the first time.
@@ -14,7 +14,8 @@ const fetchBodies = {
   countries: "CRUD=SELECT&COMMAND=GET_TOTAL_QUOTA&ISCAPI=0",
   country: "CRUD=SELECT&COMMAND=GET_COUNTRY_QUOTA&PKEY=", // Add country key at the end
   segment: "CRUD=SELECT&COMMAND=GET_GROUPBY_SEGMENT_OWN&PKEY=", // Add country key at the end
-  brandOwner: "CRUD=SELECT&COMMAND=GET_OWN_DATA&OWN=1&PKEY=" // Add country key at the end
+  brandOwner: "CRUD=SELECT&COMMAND=GET_OWN_DATA&OWN=1&PKEY=", // Add country key at the end
+  achieved: "CRUD=SELECT&COMMAND=GET_COUNTRY_QUOTA_COM_CNT&PKEY=" // Add country key at the end
 }
 
 const fetchOptions = {
@@ -108,8 +109,8 @@ async function getCountries() {
     return console.error("Could not fetch countries");
   }
 
-  const countries = await countriesResponse.json();
-  //countries = countries.filter(obj => obj["PKEY"] === "2103022_SG"); // Filter the countries for testing
+  let countries = await countriesResponse.json();
+  //countries = countries.filter(obj => obj["PKEY"] === "2103022_US"); // Filter the countries for testing
   for(const country of countries) {
     console.log(`Fetching data for country: ${country["country_name"]}...`);
     const key = country["PKEY"];
@@ -135,18 +136,31 @@ async function getCountries() {
 async function getCountryData(key) {
   fetchOptions.body = fetchBodies.country + key;
   const [countryFetchError, countryResponse] = await handler(fetch(FETCH_URL, fetchOptions));
-  if(countryFetchError) return;
+  if(countryFetchError) return console.error(countryFetchError);
   const countryData = await countryResponse.json();
+
+  fetchOptions.body = fetchBodies.achieved + key;
+  const [achievedFetchError, achievedResponse] = await handler(fetch(FETCH_URL, fetchOptions));
+  if(achievedFetchError) return console.error(achievedFetchError);
+  const achievedData = await achievedResponse.json();
   
   fetchOptions.body = fetchBodies.segment + key;
   const [segmentFetchError, segmentResponse] = await handler(fetch(FETCH_URL, fetchOptions));
-  if(segmentFetchError) return;
+  if(segmentFetchError) return console.error(segmentFetchError);
   const segmentData = await segmentResponse.json();
 
   fetchOptions.body = fetchBodies.brandOwner + key;
   const [brandOwnerError, brandOwnerResponse] = await handler(fetch(FETCH_URL, fetchOptions));
-  if(brandOwnerError) return;
+  if(brandOwnerError) return console.error(brandOwnerError);
   const brandOwnerData = await brandOwnerResponse.json();
+
+  for(const achivedObject of achievedData) {
+    for(const countryObject of countryData) {
+      if(achivedObject["QID"].toLowerCase() == countryObject["QID"].toLowerCase() && achivedObject["ANS"] == countryObject["ANS"]) {
+        countryObject["com_cnt"] = achivedObject["COM_CNT"];
+      }
+    }
+  }
 
   const ownerSegments = countryData.filter(object => object["grp"] === "Segment by OWNER");
   const intenderSegments = countryData.filter(object => object["grp"] === "Segment by INTENDER");
@@ -302,7 +316,7 @@ async function addTabs(api, spreadsheet) {
       resource: { requests: addSheetRequests }
     }));
     if(sheetUpdateError) {
-      console.error(`Error: ${sheetUpdateError.errors[0].message}`);
+      return console.error(`Error: ${sheetUpdateError}`);
     }
     console.log("Finished adding tabs!");
   }
@@ -315,7 +329,7 @@ async function updateTabs(auth) {
   const api = google.sheets({ version: 'v4', auth });
   let [getSpreadsheetError, spreadsheet] = await handler(api.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID }));
   if(getSpreadsheetError) {
-    return console.error(`Error: ${getSpreadsheetError.errors[0].message}`);
+    return console.error(`Error: ${getSpreadsheetError}`);
   }
 
   const numberOfAddedSheets = await addTabs(api, spreadsheet);
@@ -323,7 +337,7 @@ async function updateTabs(auth) {
   if(numberOfAddedSheets > 0) {
     [getSpreadsheetError, spreadsheet] = await handler(api.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID }));
     if(getSpreadsheetError) {
-      return console.error(`Error: ${getSpreadsheetError.errors[0].message}`);
+      return console.error(`Error: ${getSpreadsheetError}`);
     }
   }
 
@@ -827,7 +841,7 @@ async function updateTabs(auth) {
     requestBody: { valueInputOption: "USER_ENTERED", data: allCountriesValues }
   }));
   if(valueUpdateError) {
-    console.error(`Error: ${valueUpdateError.errors[0].message}`);
+    console.error(`Error: ${valueUpdateError}`);
   }
 
   const [mergeUpdateError] = await handler(api.spreadsheets.batchUpdate({
@@ -835,7 +849,7 @@ async function updateTabs(auth) {
     resource: { requests: allCountriesMergeRequests }
   }));
   if(mergeUpdateError) {
-    console.error(`Error: ${mergeUpdateError.errors[0].message}`);
+    console.error(`Error: ${mergeUpdateError}`);
   }
 
   const [styleUpdateError] = await handler(api.spreadsheets.batchUpdate({
@@ -843,7 +857,7 @@ async function updateTabs(auth) {
     resource: { requests: allCountriesStyleRequests }
   }));
   if(styleUpdateError) {
-    console.error(`Error: ${styleUpdateError.errors[0].message}`);
+    console.error(`Error: ${styleUpdateError}`);
   }
 
   console.log("Finished updating tabs!");
