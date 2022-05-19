@@ -1,864 +1,240 @@
-import { readFile, writeFile } from 'fs';
-import { createInterface } from 'readline';
-import { google } from 'googleapis';
-import fetch from "node-fetch";
+import "dotenv/config";
+import {request} from "./request.js";
+import {readCredentialsAndAuthorize} from "./auth.js";
+import {updateTabs} from "./sheets.js";
 
-const SPREADSHEET_ID = "1zJP895A7Hwt_bJPsTVQDmHy6Fi4Ii80NaqMW9ZilcAU";
-const FETCH_URL = "http://w3.onlinesurvey.kr/project/quota_ajax.asp";
-const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]; // If modifying these scopes, delete token.json.
-const TOKEN_PATH = "./token.json"; // The file token.json stores the user's access and refresh tokens, and is created automatically when the authorization flow completes for the first time.
-const CREDENTIALS_PATH = "./credentials.json";
-let countriesByKey = [];
-
-const fetchBodies = {
-  countries: "CRUD=SELECT&COMMAND=GET_TOTAL_QUOTA&ISCAPI=0",
-  country: "CRUD=SELECT&COMMAND=GET_COUNTRY_QUOTA&PKEY=", // Add country key at the end
-  segment: "CRUD=SELECT&COMMAND=GET_GROUPBY_SEGMENT_OWN&PKEY=", // Add country key at the end
-  brandOwner: "CRUD=SELECT&COMMAND=GET_OWN_DATA&OWN=1&PKEY=", // Add country key at the end
-  achieved: "CRUD=SELECT&COMMAND=GET_COUNTRY_QUOTA_COM_CNT&PKEY=" // Add country key at the end
-}
-
-const fetchOptions = {
-  "headers": {
-    "accept": "*/*",
-    "accept-language": "en-GB,en;q=0.9,sv;q=0.8,en-US;q=0.7",
-    "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-    "x-requested-with": "XMLHttpRequest"
-  },
-  "referrer": "http://w3.onlinesurvey.kr/project/quota_index.asp?CID=83ex9w1qe2",
-  "referrerPolicy": "strict-origin-when-cross-origin",
-  "body": fetchBodies.countries,
-  "method": "POST",
-  "mode": "cors",
-  "credentials": "include"
+const bodies = {
+    getCountries: "CRUD=SELECT&COMMAND=GET_TOTAL_QUOTA",
+    getCountryQuota: "CRUD=SELECT&COMMAND=GET_COUNTRY_QUOTA&PKEY=",
+    getCountryQuotaCount: "CRUD=SELECT&COMMAND=GET_COUNTRY_QUOTA_COM_CNT&PKEY=",
+    getCountryQuotaSeries: "CRUD=SELECT&COMMAND=GET_COUNTRY_QUOTA_SERIES&PKEY=",
+    getCountryQuotaSeriesCount: "CRUD=SELECT&COMMAND=GET_COUNTRY_QUOTA_COM_CNT_SERIES&PKEY=",
+    getConvertAge: "CRUD=SELECT&COMMAND=GET_CONVERT_AGE&PKEY=",
+    getConvertRegion: "CRUD=SELECT&COMMAND=GET_CONVERT_REGION&PKEY=",
+    ownerBrand: "CRUD=SELECT&COMMAND=GET_OWN_DATA&OWN=1&PKEY=",
 };
 
-(async () => {
-  countriesByKey = await getCountries();  
+const excludeCountries = [
+    "2022_SA",
+    "2022_EG",
+    "2022_AE",
+    "2022_IL",
+    "2022_KZ",
+    "2022_MA",
+];
 
-  // Load client secrets from a local file.
-  readFile(CREDENTIALS_PATH, (error, content) => {
-    if (error) {
-      return console.error(`Error loading client secret file: ${error}`);
+(async () => {
+    const countries = (await request(bodies.getCountries))
+        .filter(country => !excludeCountries.includes(country["PKEY"]));
+
+    const countryDataByKey = {};
+
+    for (const country of countries) {
+        console.log(`Fetching data for ${country["country_name"]}...`);
+
+        const key = country["PKEY"];
+        const countryQuota = await getCountryWithCount(key);
+        const countryQuotaSeries = await getCountryQuotaSeriesWithCount(key);
+        const ownerBrand = await getOwnerBrandTableRows(key, countryQuotaSeries);
+
+        countryDataByKey[key] = {
+            tab: `${country["country_code"]}. ${key.split("_")[1]}`,
+            tables: {
+                region: getTableRows("Region", await getRegionData(key, countryQuota)),
+                age: getTableRows("Age", await getAgeData(key, countryQuota)),
+                gender: getTableRows("Gender", getGenderData(countryQuota)),
+                brand: getTableRows("Brand", getBrandData(countryQuota)),
+                mainSegment: getTableRows("Main Segment", getMainSegmentTotalData(countryQuota)),
+                mainSegmentByOwner: getTableRows("Owner", getMainSegmentOwnerData(countryQuotaSeries), true),
+                mainSegmentByIntender: getTableRows("Intender", getMainSegmentIntenderData(countryQuotaSeries), true),
+                segmentBooster: getTableRows("Seg Booster", getSegmentBooster(countryQuotaSeries)),
+                evBooster: getTableRows("EV Booster", getEvBooster(countryQuotaSeries)),
+                ownerBrand,
+            }
+        };
     }
 
-    const credentials = JSON.parse(content);
-
-    // Authorize a client with credentials, then call the Google Sheets API.
-    authorize(credentials, updateTabs)
-  });
+    readCredentialsAndAuthorize(auth => {
+        updateTabs(auth, countryDataByKey);
+    });
 })();
 
+async function getCountryWithCount(key) {
+    const countryQuota = await request(bodies.getCountryQuota + key);
+    const countryQuotaCount = await request(bodies.getCountryQuotaCount + key);
 
-/**
- * Create an OAuth2 client with the given credentials, and then execute the given callback function.
- * @param {Object} credentials The authorization client credentials.
- * @param {function} callback The callback to call with the authorized client.
- */
-function authorize(credentials, callback) {
-  const { client_secret, client_id, redirect_uris } = credentials.installed;
-  const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
+    return countryQuota.map(r1 => {
+        const r2Matched = countryQuotaCount.find(r2 => (
+            r1["PKEY"] === r2["PKEY"] &&
+            r1["QID"].toLowerCase() === r2["QID"].toLowerCase() &&
+            r1["QID_2"].toLowerCase() === r2["QID_2"].toLowerCase() &&
+            r1["ANS"] === r2["ANS"]
+        ));
 
-  // Check if we have previously stored a token.
-  readFile(TOKEN_PATH, (error, token) => {
-    if (error) {
-      return getNewToken(oAuth2Client, callback);
-    }
-    oAuth2Client.setCredentials(JSON.parse(token));
-    callback(oAuth2Client);
-  });
-}
+        r1["COM_CNT"] = r2Matched?.["COM_CNT"] ?? "0";
 
-/**
- * Get and store new token after prompting for user authorization, and then execute the given callback with the authorized OAuth2 client.
- * @param {google.auth.OAuth2} oAuth2Client The OAuth2 client to get token for.
- * @param {getEventsCallback} callback The callback for the authorized client.
- */
-function getNewToken(oAuth2Client, callback) {
-  const authUrl = oAuth2Client.generateAuthUrl({ access_type: 'offline', scope: SCOPES });
-  console.log('Authorize this app by visiting this url:', authUrl);
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  rl.question('Enter the code from that page here: ', code => {
-    rl.close();
-    oAuth2Client.getToken(code, (err, token) => {
-      if (err) return console.error('Error while trying to retrieve access token', err);
-      oAuth2Client.setCredentials(token);
-      // Store the token to disk for later program executions
-      writeFile(TOKEN_PATH, JSON.stringify(token), (err) => {
-        if (err) return console.error(err);
-        console.log('Token stored to', TOKEN_PATH);
-      });
-      callback(oAuth2Client);
+        return r1;
     });
-  });
 }
 
-function handler(promise) {
-  return promise
-    .then(response => [undefined, response])
-    .catch(error => [error, undefined]);
- }
+async function getCountryQuotaSeriesWithCount(key) {
+    const quotaSeriesRows = await request(bodies.getCountryQuotaSeries + key);
+    const quotaSeriesCountRows = await request(bodies.getCountryQuotaSeriesCount + key);
 
-async function getCountries() {
-  const countriesByKey = {};
-  
-  console.log("Fetching all countries data...");
-  fetchOptions.body = fetchBodies.countries;
-  const [fetchCountriesError, countriesResponse] = await handler(fetch(FETCH_URL, fetchOptions));
-  if(fetchCountriesError) {
-    return console.error("Could not fetch countries");
-  }
+    return quotaSeriesRows.map(r1 => {
+        const r2Matched = quotaSeriesCountRows.find(r2 => (
+            r1["PKEY"] === r2["PKEY"] &&
+            r1["QID"].toLowerCase() === r2["QID"].toLowerCase() &&
+            r1["Q83_VAL"].toLowerCase() === r2["Q83_VAL"].toLowerCase() &&
+            r1["QID_2"].toLowerCase() === r2["QID_2"].toLowerCase() &&
+            r1["ANS"] === r2["ANS"]
+        ));
 
-  let countries = await countriesResponse.json();
-  //countries = countries.filter(obj => obj["PKEY"] === "2103022_US"); // Filter the countries for testing
-  for(const country of countries) {
-    console.log(`Fetching data for country: ${country["country_name"]}...`);
-    const key = country["PKEY"];
-    const countryData = await getCountryData(key);
-    if(!countryData) {
-      console.error(`Could not fetch data for key ${key}.`);
-      continue;
-    }
-    countriesByKey[key] = {
-      number: country["country_code"],
-      code: key.slice(key.lastIndexOf("_") + 1),
-      name: country["country_name"],
-      quota: country["TOTAL_CNT"],
-      count: country["CNT"],
-      data: countryData
-    };
-    console.log(`Finished fetching data for country: ${country["country_name"]}!`);
-  }
-  console.log("Finished fetching all countries data!");
-  return countriesByKey;
-}
+        r1["COM_CNT"] = r2Matched?.["COM_CNT"] ?? "0";
 
-async function getCountryData(key) {
-  fetchOptions.body = fetchBodies.country + key;
-  const [countryFetchError, countryResponse] = await handler(fetch(FETCH_URL, fetchOptions));
-  if(countryFetchError) return console.error(countryFetchError);
-  const countryData = await countryResponse.json();
-
-  fetchOptions.body = fetchBodies.achieved + key;
-  const [achievedFetchError, achievedResponse] = await handler(fetch(FETCH_URL, fetchOptions));
-  if(achievedFetchError) return console.error(achievedFetchError);
-  const achievedData = await achievedResponse.json();
-  
-  fetchOptions.body = fetchBodies.segment + key;
-  const [segmentFetchError, segmentResponse] = await handler(fetch(FETCH_URL, fetchOptions));
-  if(segmentFetchError) return console.error(segmentFetchError);
-  const segmentData = await segmentResponse.json();
-
-  fetchOptions.body = fetchBodies.brandOwner + key;
-  const [brandOwnerError, brandOwnerResponse] = await handler(fetch(FETCH_URL, fetchOptions));
-  if(brandOwnerError) return console.error(brandOwnerError);
-  const brandOwnerData = await brandOwnerResponse.json();
-
-  for(const achivedObject of achievedData) {
-    for(const countryObject of countryData) {
-      if(achivedObject["QID"].toLowerCase() == countryObject["QID"].toLowerCase() && achivedObject["ANS"] == countryObject["ANS"]) {
-        countryObject["com_cnt"] = achivedObject["COM_CNT"];
-      }
-    }
-  }
-
-  const ownerSegments = countryData.filter(object => object["grp"] === "Segment by OWNER");
-  const intenderSegments = countryData.filter(object => object["grp"] === "Segment by INTENDER");
-  const ownerSegmentsToUpdate = segmentData.filter(segment => segment.OWN == "1");
-  const intenderSegmentsToUpdate = segmentData.filter(segment => segment.OWN == "2");
-
-  for(const ownerSegmentToUpdate of ownerSegmentsToUpdate) {
-    for(const ownerSegment of ownerSegments) {
-      if(ownerSegmentToUpdate["Q_Seg_Quota"] === ownerSegment["ANS"]) {
-        ownerSegment["com_cnt"] = ownerSegmentToUpdate["cnt"];
-      }
-    }
-  }
-  for(const intenderSegmentToUpdate of intenderSegmentsToUpdate) {
-    for(const intenderSegment of intenderSegments) {
-      if(intenderSegmentToUpdate["Q_Seg_Quota"] === intenderSegment["ANS"]) {
-        intenderSegment["com_cnt"] = intenderSegmentToUpdate["cnt"];
-      }
-    }
-  }
-
-  const countryDataByGroup = countryData.reduce((accumulator, currentObject) => {
-    if(!accumulator[currentObject["grp"]]) {
-      accumulator[currentObject["grp"]] = [];
-    }
-    accumulator[currentObject["grp"]].push({
-      ...currentObject,
-      percent: ((currentObject["com_cnt"] / currentObject["ori_cnt"]) * 100).toFixed(2),
-      remaining: currentObject["ori_cnt"] - currentObject["com_cnt"]
+        return r1;
     });
-    return accumulator;
-  }, {}); 
-
-  countryDataByGroup["BrandOwner"] = brandOwnerData;
-
-  return countryDataByGroup;
 }
 
-function getTableRows(tableName, tableRowsObject, removeFirst = false) {
-  const rows = [];
-  const headerRow = [tableName, "Quota", "Achieved (N)", "Achieved (%)", "Remaining"];
-
-  for(const tableRowObject of tableRowsObject) {
-    const { ANS, label, ori_cnt: quota, com_cnt: achievedNumber, percent: achievedPercent, remaining } = tableRowObject;
-    rows.push([`${ANS}. ${label}`, parseInt(quota), parseInt(achievedNumber), parseFloat(achievedPercent), parseInt(remaining)]);
-  }
-
-  const footerRow = rows.reduce((accumulator, currentArray) => {
-    for(let i = 1; i < currentArray.length; i++) {
-      const value = currentArray[i];
-      accumulator[i] = (accumulator[i] || 0) + value;
-    }
-    return accumulator;
-  }, []);
-  footerRow[0] = "Total";
-  footerRow[3] = +((footerRow[2] / footerRow[1]) * 100).toFixed(2);
-
-  rows.push(footerRow);
-  rows.unshift(headerRow);
-
-  if(removeFirst) {
-    rows.forEach(row => row.shift());
-  }
-
-  return rows;
+function getBrandData(countryQuota) {
+    return countryQuota.filter(row => row["QID_2"] === "Q_Brand");
 }
 
-function getBrandByOwnerRows(tableName, countryData) {
-  const rows = [];
-  const headerRow = [tableName, "Quota"]
-
-  const brandByOwnerByBrandLabel = countryData["BrandOwner"].reduce((accumulator, currentObject) => {
-    const key = `${currentObject["BRAND_CD"]}. ${currentObject["LABEL"]}`;
-    if(!accumulator[key]) {
-      accumulator[key] = {
-        data: [],
-        quota: 0
-      };
-    }
-    accumulator[key]["data"].push(currentObject);
-    return accumulator;
-  }, {});
-
-  for(const brandLabel of Object.keys(brandByOwnerByBrandLabel)) {
-    const brandObject = brandByOwnerByBrandLabel[brandLabel];
-    const brandObjectData = brandObject.data;
-    for(const brandObjectDataObject of brandObjectData) {
-      for(const ownerSegment of countryData["Segment by OWNER"]) {
-        if(brandObjectDataObject["SEG_CD"] === ownerSegment["ANS"]) {
-          brandObjectDataObject["label"] = ownerSegment["label"];
-        }
-      }
-      for(const brandByOwner of countryData["Brand by OWNER"]) {
-        if(brandObjectDataObject["LABEL"] === brandByOwner["label"]) {
-          brandByOwnerByBrandLabel[brandLabel]["quota"] = brandByOwner["ori_cnt"];
-        }
-      }
-    }
-
-    const row = [brandLabel, parseInt(brandObject.quota)];
-    let sum = 0;
-    for(const brandObject of brandObjectData) {
-      const cnt = parseInt(brandObject["CNT"])
-      row.push(cnt);
-      sum += cnt;
-    }
-    row.push(sum);
-    rows.push(row);
-  }
-
-  const footerRow = rows.reduce((accumulator, currentArray) => {
-    for(let i = 1; i < currentArray.length; i++) {
-      const value = currentArray[i];
-      accumulator[i] = (accumulator[i] || 0) + value;
-    }
-    return accumulator;
-  }, []);
-  footerRow[0] = "Total";
-
-  brandByOwnerByBrandLabel[Object.keys(brandByOwnerByBrandLabel)[0]].data.forEach(object => {
-    headerRow.push(object.label);
-  });
-  headerRow.push("Total");
-
-  rows.unshift(headerRow);
-  rows.push(footerRow);
-
-  return rows;
+function getGenderData(countryQuota) {
+    return countryQuota.filter(row => row["QID"] === "Q3");
 }
 
-async function addTabs(api, spreadsheet) {
-  const addSheetRequests = [];
+async function getAgeData(key, countryQuota) {
+    const convertAgeRows = await request(bodies.getConvertAge + key);
 
-  for(const key of Object.keys(countriesByKey)) {
-    const country = countriesByKey[key];
-    const tabName = `${country["number"]}. ${country["code"]}`;
-    const exists = spreadsheet.data.sheets.some(sheet => sheet.properties.title === tabName);
-    if(!exists) {
-      addSheetRequests.push({
-        addSheet: {
-          properties: {
-            title: tabName
-          }
-        }
-      });
-    }
-  }
+    return countryQuota
+        .filter(row => row["QID"] === "Q6")
+        .map(row => {
+            row["COM_CNT"] = convertAgeRows.reduce((previous, current) => {
+                return row["ANS"].includes(current["AGE"])
+                    ? previous + parseInt(current["COM_CNT"])
+                    : previous;
+            }, 0);
 
-  if(addSheetRequests.length > 0) {
-    console.log("Adding tabs...");
-    const [sheetUpdateError, sheetUpdateResponse] = await handler(api.spreadsheets.batchUpdate({
-      spreadsheetId: SPREADSHEET_ID,
-      resource: { requests: addSheetRequests }
-    }));
-    if(sheetUpdateError) {
-      return console.error(`Error: ${sheetUpdateError}`);
-    }
-    console.log("Finished adding tabs!");
-  }
-
-  return addSheetRequests.length;
+            return row;
+        });
 }
 
-async function updateTabs(auth) {
-  console.log("Updating tabs...");
-  const api = google.sheets({ version: 'v4', auth });
-  let [getSpreadsheetError, spreadsheet] = await handler(api.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID }));
-  if(getSpreadsheetError) {
-    return console.error(`Error: ${getSpreadsheetError}`);
-  }
+async function getRegionData(key, countryQuota) {
+    const convertRegionRows = await request(bodies.getConvertRegion + key);
 
-  const numberOfAddedSheets = await addTabs(api, spreadsheet);
+    return countryQuota
+        .filter(row => row["QID"] === "Q7")
+        .map(row => {
+            row["COM_CNT"] = convertRegionRows.reduce((previous, current) => {
+                return row["ANS"].includes(current["REGION"])
+                    ? previous + parseInt(current["COM_CNT"])
+                    : previous;
+            }, 0);
 
-  if(numberOfAddedSheets > 0) {
-    [getSpreadsheetError, spreadsheet] = await handler(api.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID }));
-    if(getSpreadsheetError) {
-      return console.error(`Error: ${getSpreadsheetError}`);
-    }
-  }
+            return row;
+        });
+}
 
-  const allCountriesValues = [];
-  const allCountriesMergeRequests = [];
-  const allCountriesStyleRequests = [];
+function getMainSegmentTotalData(countryQuota) {
+    return countryQuota.filter(row => row["QID_2"] === "Q_Seg_Quota");
+}
 
-  const borderStyle = {
-    style: "SOLID",
-    color: {
-      red: 0.0,
-      green: 0.0,
-      blue: 0.0,
-      alpha: 1.0
-    }
-  };
-  const borders = { top: borderStyle, right: borderStyle, bottom: borderStyle, left: borderStyle };
-  const headerStyle = {
-    cell: {
-      userEnteredFormat: {
-        backgroundColor: {
-          red: 239 / 255,
-          green: 239 / 255,
-          blue: 239 / 255
-        },
-        horizontalAlignment: "CENTER",
-        textFormat: {
-          bold: true,
-        }
-      }
-    },
-    fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"
-  };
-  const firstColumnStyle = {
-    cell: {
-      userEnteredFormat: {
-        backgroundColor: {
-          red: 239 / 255,
-          green: 239 / 255,
-          blue: 239 / 255
-        }
-      }
-    },
-    fields: "userEnteredFormat(backgroundColor)"
-  };
-  const footerStyle = { ...firstColumnStyle };
+function getMainSegmentOwnerData(countryQuotaSeries) {
+    return countryQuotaSeries.filter(row => row["QID_2"] === "Q_Seg_Quota" && row["Q83_VAL"] === "1");
+}
 
-  for(const key of Object.keys(countriesByKey)) {
-    const country = countriesByKey[key];
-    const tabName = `${country["number"]}. ${country["code"]}`;
-    const tabId = spreadsheet.data.sheets.find(object => tabName === object.properties.title).properties.sheetId;
+function getMainSegmentIntenderData(countryQuotaSeries) {
+    return countryQuotaSeries.filter(row => row["QID_2"] === "Q_Seg_Quota" && row["Q83_VAL"] === "2");
+}
 
-    const genderRows = getTableRows("Gender", country.data["Gender"]);
-    const ageRows = getTableRows("Age", country.data["Age"]);
-    const brandRows = getTableRows("Brand", country.data["Brand"]);
-    const segmentRows = getTableRows("Segment", country.data["Segment"]);
-    const segmentByOwnerRows = getTableRows("Owner", country.data["Segment by OWNER"], true);
-    const segmentByIntenderRows = getTableRows("Intender", country.data["Segment by INTENDER"], true);
-    const brandByOwnerRows = getBrandByOwnerRows("Brand Owner", country.data);
-    
-    let regionRows = getTableRows("Region", country.data["Region"] || []);
-    if(regionRows.length <= 2) {
-      regionRows = [];
-    }
-
-    const genderRangeStart = 1;
-    const genderRangeEnd = genderRangeStart + genderRows.length - 1
-    const genderRange = `A${genderRangeStart}:E${genderRangeEnd}`;
-
-    const ageRangeStart = genderRangeEnd + 2;
-    const ageRangeEnd = ageRangeStart + ageRows.length - 1;
-    const ageRange = `A${ageRangeStart}:E${ageRangeEnd}`;
-
-    const regionRangeStart = ageRangeEnd + 2;
-    const regionRangeEnd = regionRangeStart + (regionRows.length === 0 ? -2 : regionRows.length - 1);
-    const regionRange = `A${regionRangeStart}:E${regionRangeEnd}`;
-
-    const segmentRangeStart = regionRangeEnd + 2 + 1;
-    const segmentRangeEnd = segmentRangeStart + segmentRows.length - 1;
-    const segmentRange = `A${segmentRangeStart}:E${segmentRangeEnd}`;
-    const segmentByOwnerRange = `F${segmentRangeStart}:I${segmentRangeEnd}`;
-    const segmentByIntenderRange = `J${segmentRangeStart}:M${segmentRangeEnd}`;
-
-    const brandRangeStart = 1;
-    const brandRangeEnd = brandRangeStart + brandRows.length - 1;
-    const brandRange = `G${brandRangeStart}:K${brandRangeEnd}`;
-
-    const brandByOwnerRangeStart = segmentRangeEnd + 2;
-    const brandByOwnerRangeEnd = brandByOwnerRangeStart + brandByOwnerRows.length - 1;
-    const brandByOwnerColumnCount = brandByOwnerRows[0].length;
-    const brandByOwnerRange = `A${brandByOwnerRangeStart}:${String.fromCharCode(64 + brandByOwnerColumnCount)}${brandByOwnerRangeEnd}`;
-
-    
-    const values = [
-      {
-        range: `${tabName}!${genderRange}`,
-        values: genderRows
-      },
-      {
-        range: `${tabName}!${ageRange}`,
-        values: ageRows
-      },
-      {
-        range: `${tabName}!${brandRange}`,
-        values: brandRows
-      },
-      {
-        range: `${tabName}!${regionRange}`,
-        values: regionRows
-      },
-      {
-        range: `${tabName}!${segmentRange}`,
-        values: segmentRows
-      },
-      {
-        range: `${tabName}!${segmentByOwnerRange}`,
-        values: segmentByOwnerRows
-      },
-      {
-        range: `${tabName}!${segmentByIntenderRange}`,
-        values: segmentByIntenderRows
-      },
-      {
-        range: `${tabName}!F${segmentRangeStart - 1}`,
-        values: [["Owner"]]
-      },
-      {
-        range: `${tabName}!J${segmentRangeStart - 1}`,
-        values: [["Intender"]]
-      },
-      {
-        range: `${tabName}!${brandByOwnerRange}`,
-        values: brandByOwnerRows
-      }
-    ];
-
-    const mergeRequests = [
-      {
-        mergeCells: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: segmentRangeStart - 2, 
-            endRowIndex: segmentRangeStart - 1, 
-            startColumnIndex: 5, 
-            endColumnIndex: 9
-          },
-          mergeType: "MERGE_ROWS"
-        }
-      },
-      {
-        mergeCells: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: segmentRangeStart - 2, 
-            endRowIndex: segmentRangeStart - 1, 
-            startColumnIndex: 9, 
-            endColumnIndex: 13
-          },
-          mergeType: "MERGE_ROWS"
-        }
-      },
-      {
-        mergeCells: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: segmentRangeStart - 2, 
-            endRowIndex: segmentRangeStart, 
-            startColumnIndex: 0, 
-            endColumnIndex: 5
-          },
-          mergeType: "MERGE_COLUMNS"
-        }
-      }
-    ];
-
-    const styleRequests = [
-      {
-        repeatCell: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: segmentRangeStart - 2, 
-            endRowIndex: segmentRangeStart, 
-            startColumnIndex: 0, 
-            endColumnIndex: 5
-          },
-          cell: {
-            userEnteredFormat: {
-              verticalAlignment: "MIDDLE"
+function getSegmentBooster(countryQuotaSeries) {
+    return countryQuotaSeries
+        .filter(row => row["QID_2"] === "Q_Seg_Booster")
+        .map(row => {
+            if (row["Q83_VAL"] === "6") {
+                row["LABEL"] += " - Owner"
+            } else {
+                row["LABEL"] += " - Intender"
             }
-          },
-          fields: "userEnteredFormat.verticalAlignment"
+            return row;
+        });
+}
+
+function getEvBooster(countryQuotaSeries) {
+    return countryQuotaSeries.filter(row => row["QSORDER"] === "6");
+}
+
+async function getOwnerBrandTableRows(key, countryQuotaSeries) {
+    const ownerBrand = await request(bodies.ownerBrand + key);
+
+    const segmentQuota = countryQuotaSeries.filter(row => row["QID_2"] === "Q_Seg_Quota" && row["Q83_VAL"] === "1");
+    const labelsRow = segmentQuota.map(row => row["LABEL"]);
+    const achievedRow = segmentQuota.map(row => row["COM_CNT"]);
+
+    let tableRows = [["- Owner Brand", "Quota", ...labelsRow, "Total", "Total(%)"]];
+
+    const ownerBrandQuotas = countryQuotaSeries.filter(row => row["QID_2"] === "Q_Brand" && row["Q83_VAL"] === "1");
+
+    const rowsByBrandOwner = ownerBrand.reduce((previous, current) => {
+        const key = `${current["BRAND_CD"]}. ${current["LABEL"]}`;
+
+        if (!previous[key]) {
+            const ownerBrandQuota = ownerBrandQuotas.find(row => row["ANS"] === current["BRAND_CD"]);
+            previous[key] = {
+                data: [],
+                quota: parseInt(ownerBrandQuota["ORI_CNT"]),
+                achieved: parseInt(ownerBrandQuota["COM_CNT"]),
+            };
         }
-      },
-      // Header
-      {
-        repeatCell: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: genderRangeStart - 1, 
-            endRowIndex: genderRangeStart, 
-            startColumnIndex: 0, 
-            endColumnIndex: 5
-          },
-          ...headerStyle
-        }
-      },
-      {
-        repeatCell: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: ageRangeStart - 1, 
-            endRowIndex: ageRangeStart, 
-            startColumnIndex: 0, 
-            endColumnIndex: 5
-          },
-          ...headerStyle
-        }
-      },
-      {
-        repeatCell: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: brandRangeStart - 1, 
-            endRowIndex: brandRangeStart, 
-            startColumnIndex: 6, 
-            endColumnIndex: 11
-          },
-          ...headerStyle
-        }
-      },
-      {
-        repeatCell: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: segmentRangeStart - 2, 
-            endRowIndex: segmentRangeStart, 
-            startColumnIndex: 0, 
-            endColumnIndex: 13
-          },
-          ...headerStyle
-        }
-      },
-      {
-        repeatCell: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: brandByOwnerRangeStart - 1,
-            endRowIndex: brandByOwnerRangeStart,
-            startColumnIndex: 0, 
-            endColumnIndex: brandByOwnerColumnCount
-          },
-          ...headerStyle
-        }
-      },
-      // First column except header and footer
-      {
-        repeatCell: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: genderRangeStart,
-            endRowIndex: genderRangeEnd - 1,
-            startColumnIndex: 0, 
-            endColumnIndex: 1
-          },
-          ...firstColumnStyle
-        }
-      },
-      {
-        repeatCell: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: ageRangeStart,
-            endRowIndex: ageRangeEnd - 1,
-            startColumnIndex: 0, 
-            endColumnIndex: 1
-          },
-          ...firstColumnStyle
-        }
-      },
-      {
-        repeatCell: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: brandRangeStart,
-            endRowIndex: brandRangeEnd - 1,
-            startColumnIndex: 6, 
-            endColumnIndex: 7
-          },
-          ...firstColumnStyle
-        }
-      },
-      {
-        repeatCell: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: segmentRangeStart,
-            endRowIndex: segmentRangeEnd - 1,
-            startColumnIndex: 0, 
-            endColumnIndex: 1
-          },
-          ...firstColumnStyle
-        }
-      },
-      {
-        repeatCell: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: brandByOwnerRangeStart,
-            endRowIndex: brandByOwnerRangeEnd - 1,
-            startColumnIndex: 0, 
-            endColumnIndex: 1
-          },
-          ...firstColumnStyle
-        }
-      },
-      // Footer
-      {
-        repeatCell: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: genderRangeEnd - 1,
-            endRowIndex: genderRangeEnd,
-            startColumnIndex: 0, 
-            endColumnIndex: 5
-          },
-          ...footerStyle
-        }
-      },
-      {
-        repeatCell: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: ageRangeEnd - 1,
-            endRowIndex: ageRangeEnd,
-            startColumnIndex: 0, 
-            endColumnIndex: 5
-          },
-          ...footerStyle
-        }
-      },
-      {
-        repeatCell: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: brandRangeEnd - 1,
-            endRowIndex: brandRangeEnd,
-            startColumnIndex: 6, 
-            endColumnIndex: 11
-          },
-          ...footerStyle
-        }
-      },
-      {
-        repeatCell: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: segmentRangeEnd - 1,
-            endRowIndex: segmentRangeEnd,
-            startColumnIndex: 0, 
-            endColumnIndex: 13
-          },
-          ...footerStyle
-        }
-      },
-      {
-        repeatCell: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: brandByOwnerRangeEnd - 1,
-            endRowIndex: brandByOwnerRangeEnd,
-            startColumnIndex: 0, 
-            endColumnIndex: brandByOwnerColumnCount
-          },
-          ...footerStyle
-        }
-      },
-      // Borders 
-      {
-        updateBorders: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: genderRangeStart - 1, 
-            endRowIndex: genderRangeEnd, 
-            startColumnIndex: 0, 
-            endColumnIndex: 5
-          },
-          ...borders
-        }
-      },
-      {
-        updateBorders: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: ageRangeStart - 1, 
-            endRowIndex: ageRangeEnd, 
-            startColumnIndex: 0, 
-            endColumnIndex: 5
-          },
-          ...borders
-        }
-      },
-      {
-        updateBorders: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: brandRangeStart - 1, 
-            endRowIndex: brandRangeEnd, 
-            startColumnIndex: 6, 
-            endColumnIndex: 11
-          },
-          ...borders
-        }
-      },
-      {
-        updateBorders: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: segmentRangeStart - 2, 
-            endRowIndex: segmentRangeEnd, 
-            startColumnIndex: 0, 
-            endColumnIndex: 13
-          },
-          ...borders
-        }
-      },
-      {
-        updateBorders: {
-          range: {
-            sheetId: tabId,
-            startRowIndex: brandByOwnerRangeStart - 1, 
-            endRowIndex: brandByOwnerRangeEnd, 
-            startColumnIndex: 0, 
-            endColumnIndex: brandByOwnerColumnCount
-          },
-          ...borders
-        },
-      }
+
+        previous[key]["data"].push(current);
+
+        return previous;
+    }, {});
+
+    let totalQuota = 0;
+    let totalAchieved = 0;
+    for (const [key, {data, quota, achieved}] of Object.entries(rowsByBrandOwner)) {
+        const achievedCount = data.map(row => row["CNT"]);
+        tableRows.push([key, quota, ...achievedCount, achieved, toPercent(achieved, quota)]);
+        totalQuota += quota;
+        totalAchieved += achieved;
+    }
+
+    tableRows.push(["Total", totalQuota, ...achievedRow, totalAchieved, toPercent(totalAchieved, totalQuota)]);
+
+    return tableRows;
+}
+
+function getTableRows(name, rows, removeFirst = false) {
+    let quotaSum = 0;
+    let achievedSum = 0;
+
+    const tableRows = [
+        [`- ${name}`, "Quota", "Achie.(N)", "Achie.(%)", "Remaining"],
+        ...rows.map(row => {
+            const {ANS, LABEL, COM_CNT, ORI_CNT} = row;
+            const key = `${ANS}. ${LABEL}`;
+            const quota = parseFloat(ORI_CNT);
+            const achieved = parseFloat(COM_CNT);
+
+            quotaSum += quota;
+            achievedSum += achieved;
+
+            return [key, quota, achieved, toPercent(achieved, quota), quota - achieved];
+        }),
+        ["Total", quotaSum, achievedSum, toPercent(achievedSum, quotaSum), quotaSum - achievedSum],
     ];
 
-    // Update region table only for countries that have regions
-    if(regionRows.length > 0) {
-      const regionStyleRequests = [
-        {
-          repeatCell: {
-            range: {
-              sheetId: tabId,
-              startRowIndex: regionRangeStart - 1, 
-              endRowIndex: regionRangeStart, 
-              startColumnIndex: 0, 
-              endColumnIndex: 5
-            },
-            ...headerStyle
-          }
-        },
-        {
-          repeatCell: {
-            range: {
-              sheetId: tabId,
-              startRowIndex: regionRangeStart,
-              endRowIndex: regionRangeEnd - 1,
-              startColumnIndex: 0, 
-              endColumnIndex: 1
-            },
-            ...firstColumnStyle
-          }
-        },
-        {
-          repeatCell: {
-            range: {
-              sheetId: tabId,
-              startRowIndex: regionRangeEnd - 1,
-              endRowIndex: regionRangeEnd,
-              startColumnIndex: 0, 
-              endColumnIndex: 5
-            },
-            ...footerStyle
-          }
-        },
-        {
-          updateBorders: {
-            range: {
-              sheetId: tabId,
-              startRowIndex: regionRangeStart - 1, 
-              endRowIndex: regionRangeEnd, 
-              startColumnIndex: 0, 
-              endColumnIndex: 5
-            },
-            ...borders
-          }
-        }
-      ];
-      allCountriesStyleRequests.push(...regionStyleRequests);
+    if (removeFirst) {
+        tableRows.forEach(row => row.shift());
     }
-    allCountriesValues.push(...values);
-    allCountriesMergeRequests.push(...mergeRequests);
-    allCountriesStyleRequests.push(...styleRequests);
-  }
 
-  const [valueUpdateError] = await handler(api.spreadsheets.values.batchUpdate({
-    spreadsheetId: SPREADSHEET_ID,
-    requestBody: { valueInputOption: "USER_ENTERED", data: allCountriesValues }
-  }));
-  if(valueUpdateError) {
-    console.error(`Error: ${valueUpdateError}`);
-  }
+    return tableRows;
+}
 
-  const [mergeUpdateError] = await handler(api.spreadsheets.batchUpdate({
-    spreadsheetId: SPREADSHEET_ID,
-    resource: { requests: allCountriesMergeRequests }
-  }));
-  if(mergeUpdateError) {
-    console.error(`Error: ${mergeUpdateError}`);
-  }
-
-  const [styleUpdateError] = await handler(api.spreadsheets.batchUpdate({
-    spreadsheetId: SPREADSHEET_ID,
-    resource: { requests: allCountriesStyleRequests }
-  }));
-  if(styleUpdateError) {
-    console.error(`Error: ${styleUpdateError}`);
-  }
-
-  console.log("Finished updating tabs!");
+function toPercent(part, whole) {
+    if (whole === 0) return "0.00%";
+    return `${((part / whole) * 100).toFixed(2)}%`;
 }
