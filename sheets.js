@@ -1,42 +1,47 @@
 import {promiseHandler as handler} from "./util.js";
+import { styles } from "./style.js";
 import {google} from "googleapis";
 
 const {
     SPREADSHEET_ID,
 } = process.env;
 
-async function addTabs(api, spreadsheet, countryDataByKey) {
-    const addSheetRequests = [];
+const getAddTabsRequests = (spreadsheet, countryDataByKey) => {
+    return Object.values(countryDataByKey).reduce((current, {tab}) => {
+        const tabExists = spreadsheet.data.sheets.some(sheet => sheet.properties.title === tab);
+        if (tabExists) return current;
 
-    for (const {tab} of Object.values(countryDataByKey)) {
-        const exists = spreadsheet.data.sheets.some(sheet => sheet.properties.title === tab);
-        if (!exists) {
-            addSheetRequests.push({
+        return [
+            ...current,
+            {
                 addSheet: {
                     properties: {
                         title: tab
                     }
                 }
-            });
-        }
-    }
+            }
+        ];
+    }, []);
+}
 
-    if (addSheetRequests.length <= 0) return 0;
+
+const addTabs = async (api, addTabRequests) => {
+    if (addTabRequests.length === 0) return 0;
 
     console.log("Adding tabs...");
     const [sheetUpdateError] = await handler(api.spreadsheets.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
         resource: {
-            requests: addSheetRequests
+            requests: addTabRequests
         }
     }));
     if (sheetUpdateError) return console.error(sheetUpdateError);
     console.log("Finished adding tabs!");
 
-    return addSheetRequests.length;
+    return addTabRequests.length;
 }
 
-export async function updateTabs(auth, countryDataByKey) {
+export const updateTabs = async (auth, countryDataByKey) => {
     console.log("Updating tabs...");
 
     const api = google.sheets({version: 'v4', auth});
@@ -45,8 +50,9 @@ export async function updateTabs(auth, countryDataByKey) {
     }));
     if (getSpreadsheetError) return console.error(`Could not get spreadsheet by id ${SPREADSHEET_ID}`);
 
-    const numberOfAddedSheets = await addTabs(api, spreadsheet, countryDataByKey);
-    if (numberOfAddedSheets > 0) {
+    const addTabRequests = getAddTabsRequests(spreadsheet, countryDataByKey);
+    const numberOfAddedTabs = await addTabs(api, addTabRequests);
+    if (numberOfAddedTabs > 0) {
         [getSpreadsheetError, spreadsheet] = await handler(api.spreadsheets.get({
             spreadsheetId: SPREADSHEET_ID
         }));
@@ -56,46 +62,6 @@ export async function updateTabs(auth, countryDataByKey) {
     const allCountriesValues = [];
     const allCountriesMergeRequests = [];
     const allCountriesStyleRequests = [];
-
-    const borderStyle = {
-        style: "SOLID",
-        color: {
-            red: 0.0,
-            green: 0.0,
-            blue: 0.0,
-            alpha: 1.0
-        }
-    };
-    const borders = {top: borderStyle, right: borderStyle, bottom: borderStyle, left: borderStyle};
-    const headerStyle = {
-        cell: {
-            userEnteredFormat: {
-                backgroundColor: {
-                    red: 239 / 255,
-                    green: 239 / 255,
-                    blue: 239 / 255
-                },
-                horizontalAlignment: "CENTER",
-                textFormat: {
-                    bold: true,
-                }
-            }
-        },
-        fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"
-    };
-    const firstColumnStyle = {
-        cell: {
-            userEnteredFormat: {
-                backgroundColor: {
-                    red: 239 / 255,
-                    green: 239 / 255,
-                    blue: 239 / 255
-                }
-            }
-        },
-        fields: "userEnteredFormat(backgroundColor)"
-    };
-    const footerStyle = {...firstColumnStyle};
 
     for (const {tab, tables} of Object.values(countryDataByKey)) {
         const tabId = spreadsheet.data.sheets.find(object => tab === object.properties.title).properties.sheetId;
@@ -124,7 +90,7 @@ export async function updateTabs(auth, countryDataByKey) {
 
         const brandByOwnerRangeStart = segmentRangeEnd + 2;
         const brandByOwnerRangeEnd = brandByOwnerRangeStart + tables["ownerBrand"].length - 1;
-        const brandByOwnerColumnCount = tables["ownerBrand"][0].length;
+        const brandByOwnerColumnCount = tables["ownerBrand"]?.[0]?.length ?? 0;
         const brandByOwnerRange = `A${brandByOwnerRangeStart}:${String.fromCharCode(64 + brandByOwnerColumnCount)}${brandByOwnerRangeEnd}`;
 
         const segmentBoosterRangeStart = brandByOwnerRangeEnd + 2;
@@ -253,7 +219,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
-                    ...headerStyle
+                    ...styles.header
                 }
             },
             {
@@ -265,7 +231,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
-                    ...headerStyle
+                    ...styles.header
                 }
             },
             {
@@ -277,7 +243,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 6,
                         endColumnIndex: 11
                     },
-                    ...headerStyle
+                    ...styles.header
                 }
             },
             {
@@ -289,7 +255,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 13
                     },
-                    ...headerStyle
+                    ...styles.header
                 }
             },
             {
@@ -301,7 +267,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: brandByOwnerColumnCount
                     },
-                    ...headerStyle
+                    ...styles.header
                 }
             },
             {
@@ -313,7 +279,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
-                    ...headerStyle
+                    ...styles.header
                 }
             },
             {
@@ -325,7 +291,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
-                    ...headerStyle
+                    ...styles.header
                 }
             },
             // First column except header and footer
@@ -338,7 +304,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 1
                     },
-                    ...firstColumnStyle
+                    ...styles.firstColumn
                 }
             },
             {
@@ -350,7 +316,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 1
                     },
-                    ...firstColumnStyle
+                    ...styles.firstColumn
                 }
             },
             {
@@ -362,7 +328,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 6,
                         endColumnIndex: 7
                     },
-                    ...firstColumnStyle
+                    ...styles.firstColumn
                 }
             },
             {
@@ -374,7 +340,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 1
                     },
-                    ...firstColumnStyle
+                    ...styles.firstColumn
                 }
             },
             {
@@ -386,7 +352,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 1
                     },
-                    ...firstColumnStyle
+                    ...styles.firstColumn
                 }
             },
             {
@@ -398,7 +364,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 1
                     },
-                    ...firstColumnStyle
+                    ...styles.firstColumn
                 }
             },
             {
@@ -410,7 +376,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 1
                     },
-                    ...firstColumnStyle
+                    ...styles.firstColumn
                 }
             },
             // Footer
@@ -423,7 +389,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
-                    ...footerStyle
+                    ...styles.footer
                 }
             },
             {
@@ -435,7 +401,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
-                    ...footerStyle
+                    ...styles.footer
                 }
             },
             {
@@ -447,7 +413,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 6,
                         endColumnIndex: 11
                     },
-                    ...footerStyle
+                    ...styles.footer
                 }
             },
             {
@@ -459,7 +425,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 13
                     },
-                    ...footerStyle
+                    ...styles.footer
                 }
             },
             {
@@ -471,7 +437,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: brandByOwnerColumnCount
                     },
-                    ...footerStyle
+                    ...styles.footer
                 }
             },
             {
@@ -483,7 +449,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
-                    ...footerStyle
+                    ...styles.footer
                 }
             },
             {
@@ -495,7 +461,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
-                    ...footerStyle
+                    ...styles.footer
                 }
             },
             // Borders
@@ -508,7 +474,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
-                    ...borders
+                    ...styles.borders
                 }
             },
             {
@@ -520,7 +486,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
-                    ...borders
+                    ...styles.borders
                 }
             },
             {
@@ -532,7 +498,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 6,
                         endColumnIndex: 11
                     },
-                    ...borders
+                    ...styles.borders
                 }
             },
             {
@@ -544,7 +510,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 13
                     },
-                    ...borders
+                    ...styles.borders
                 }
             },
             {
@@ -556,7 +522,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: brandByOwnerColumnCount
                     },
-                    ...borders
+                    ...styles.borders
                 },
             },
             {
@@ -568,7 +534,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
-                    ...borders
+                    ...styles.borders
                 }
             },
             {
@@ -580,7 +546,7 @@ export async function updateTabs(auth, countryDataByKey) {
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
-                    ...borders
+                    ...styles.borders
                 }
             },
         ];
@@ -597,7 +563,7 @@ export async function updateTabs(auth, countryDataByKey) {
                             startColumnIndex: 0,
                             endColumnIndex: 5
                         },
-                        ...headerStyle
+                        ...styles.header
                     }
                 },
                 {
@@ -609,7 +575,7 @@ export async function updateTabs(auth, countryDataByKey) {
                             startColumnIndex: 0,
                             endColumnIndex: 1
                         },
-                        ...firstColumnStyle
+                        ...styles.firstColumn
                     }
                 },
                 {
@@ -621,7 +587,7 @@ export async function updateTabs(auth, countryDataByKey) {
                             startColumnIndex: 0,
                             endColumnIndex: 5
                         },
-                        ...footerStyle
+                        ...styles.footer
                     }
                 },
                 {
@@ -633,7 +599,7 @@ export async function updateTabs(auth, countryDataByKey) {
                             startColumnIndex: 0,
                             endColumnIndex: 5
                         },
-                        ...borders
+                        ...styles.borders
                     }
                 }
             ];
