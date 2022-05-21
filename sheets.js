@@ -6,6 +6,8 @@ const {
     SPREADSHEET_ID,
 } = process.env;
 
+const CAPITAL_ASCII_START = 65;
+
 const getAddTabsRequests = (spreadsheet, countryDataByKey) => {
     return Object.values(countryDataByKey).reduce((current, {tab}) => {
         const tabExists = spreadsheet.data.sheets.some(sheet => sheet.properties.title === tab);
@@ -41,6 +43,27 @@ const addTabs = async (api, addTabRequests) => {
     return addTabRequests.length;
 }
 
+const indexToChar = index => String.fromCharCode(CAPITAL_ASCII_START - 1 + index);
+
+const getRange = (rowStartIndex, columnStartIndex, rows) => {
+    const rowEndIndex = rows.length === 0 ? rowStartIndex : rowStartIndex - 1 + rows.length;
+    const columnEndIndex = columnStartIndex - 1 + rows?.[0]?.length ?? 0;
+    const startColumn = indexToChar(columnStartIndex);
+    const endColumn = indexToChar(columnEndIndex);
+
+    return {
+        row: {
+            start: rowStartIndex,
+            end: rowEndIndex,
+        },
+        column: {
+            start: columnStartIndex,
+            end: columnEndIndex,
+        },
+        toString: () => `${startColumn}${rowStartIndex}:${endColumn}${rowEndIndex}`,
+    }
+}
+
 export const updateTabs = async (auth, countryDataByKey) => {
     console.log("Updating tabs...");
 
@@ -66,88 +89,66 @@ export const updateTabs = async (auth, countryDataByKey) => {
     for (const {tab, tables} of Object.values(countryDataByKey)) {
         const tabId = spreadsheet.data.sheets.find(object => tab === object.properties.title).properties.sheetId;
 
-        const genderRangeStart = 1;
-        const genderRangeEnd = genderRangeStart + tables["gender"].length - 1
-        const genderRange = `A${genderRangeStart}:E${genderRangeEnd}`;
+        const genderRange = getRange(1, 1, tables["gender"]);
+        const ageRange = getRange(genderRange.row.end + 2, 1, tables["age"]);
+        const regionRange = getRange(ageRange.row.end + 2, 1, tables["region"])
 
-        const ageRangeStart = genderRangeEnd + 2;
-        const ageRangeEnd = ageRangeStart + tables["age"].length - 1;
-        const ageRange = `A${ageRangeStart}:E${ageRangeEnd}`;
+        const segmentRange = getRange(regionRange.row.end + 3, 1, tables["mainSegment"]);
+        const segmentByOwnerRange = getRange(regionRange.row.end + 3, segmentRange.column.end + 1, tables["mainSegmentByOwner"]);
+        const segmentByIntenderRange = getRange(regionRange.row.end + 3, segmentByOwnerRange.column.end + 1, tables["mainSegmentByIntender"]);
 
-        const regionRangeStart = ageRangeEnd + 2;
-        const regionRangeEnd = regionRangeStart + (tables["region"].length === 0 ? -2 : tables["region"].length - 1);
-        const regionRange = `A${regionRangeStart}:E${regionRangeEnd}`;
-
-        const segmentRangeStart = regionRangeEnd + 2 + 1;
-        const segmentRangeEnd = segmentRangeStart + tables["mainSegment"].length - 1;
-        const segmentRange = `A${segmentRangeStart}:E${segmentRangeEnd}`;
-        const segmentByOwnerRange = `F${segmentRangeStart}:I${segmentRangeEnd}`;
-        const segmentByIntenderRange = `J${segmentRangeStart}:M${segmentRangeEnd}`;
-
-        const brandRangeStart = 1;
-        const brandRangeEnd = brandRangeStart + tables["brand"].length - 1;
-        const brandRange = `G${brandRangeStart}:K${brandRangeEnd}`;
-
-        const brandByOwnerRangeStart = segmentRangeEnd + 2;
-        const brandByOwnerRangeEnd = brandByOwnerRangeStart + tables["ownerBrand"].length - 1;
-        const brandByOwnerColumnCount = tables["ownerBrand"]?.[0]?.length ?? 0;
-        const brandByOwnerRange = `A${brandByOwnerRangeStart}:${String.fromCharCode(64 + brandByOwnerColumnCount)}${brandByOwnerRangeEnd}`;
-
-        const segmentBoosterRangeStart = brandByOwnerRangeEnd + 2;
-        const segmentBoosterRangeEnd = segmentBoosterRangeStart + tables["segmentBooster"].length - 1;
-        const segmentBoosterRange = `A${segmentBoosterRangeStart}:E${segmentBoosterRangeEnd}`;
-
-        const evBoosterRangeStart = segmentBoosterRangeEnd + 2;
-        const evBoosterRangeEnd = evBoosterRangeStart + tables["evBooster"].length - 1;
-        const evBoosterRange = `A${evBoosterRangeStart}:E${evBoosterRangeEnd}`;
+        const brandRange = getRange(1, genderRange.column.end + 2, tables["brand"]);
+        const brandByOwnerRange = getRange(segmentRange.row.end + 2, 1, tables["ownerBrand"]);
+        const segmentBoosterRange = getRange(brandByOwnerRange.row.end + 2, 1, tables["segmentBooster"]);
+        const evBoosterRange = getRange(segmentBoosterRange.row.end + 2, 1, tables["evBooster"]);
 
         const values = [
             {
-                range: `${tab}!${genderRange}`,
+                range: `${tab}!${genderRange.toString()}`,
                 values: tables["gender"]
             },
             {
-                range: `${tab}!${ageRange}`,
+                range: `${tab}!${ageRange.toString()}`,
                 values: tables["age"]
             },
             {
-                range: `${tab}!${brandRange}`,
+                range: `${tab}!${brandRange.toString()}`,
                 values: tables["brand"]
             },
             {
-                range: `${tab}!${regionRange}`,
+                range: `${tab}!${regionRange.toString()}`,
                 values: tables["region"]
             },
             {
-                range: `${tab}!${segmentRange}`,
+                range: `${tab}!${segmentRange.toString()}`,
                 values: tables["mainSegment"]
             },
             {
-                range: `${tab}!${segmentByOwnerRange}`,
+                range: `${tab}!${segmentByOwnerRange.toString()}`,
                 values: tables["mainSegmentByOwner"]
             },
             {
-                range: `${tab}!${segmentByIntenderRange}`,
+                range: `${tab}!${segmentByIntenderRange.toString()}`,
                 values: tables["mainSegmentByIntender"]
             },
             {
-                range: `${tab}!F${segmentRangeStart - 1}`,
+                range: `${tab}!F${segmentRange.row.start - 1}`,
                 values: [["Owner"]]
             },
             {
-                range: `${tab}!J${segmentRangeStart - 1}`,
+                range: `${tab}!J${segmentRange.row.start - 1}`,
                 values: [["Intender"]]
             },
             {
-                range: `${tab}!${brandByOwnerRange}`,
+                range: `${tab}!${brandByOwnerRange.toString()}`,
                 values: tables["ownerBrand"]
             },
             {
-                range: `${tab}!${segmentBoosterRange}`,
+                range: `${tab}!${segmentBoosterRange.toString()}`,
                 values: tables["segmentBooster"]
             },
             {
-                range: `${tab}!${evBoosterRange}`,
+                range: `${tab}!${evBoosterRange.toString()}`,
                 values: tables["evBooster"]
             },
         ];
@@ -157,8 +158,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 mergeCells: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: segmentRangeStart - 2,
-                        endRowIndex: segmentRangeStart - 1,
+                        startRowIndex: segmentRange.row.start - 2,
+                        endRowIndex: segmentRange.row.start - 1,
                         startColumnIndex: 5,
                         endColumnIndex: 9
                     },
@@ -169,8 +170,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 mergeCells: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: segmentRangeStart - 2,
-                        endRowIndex: segmentRangeStart - 1,
+                        startRowIndex: segmentRange.row.start - 2,
+                        endRowIndex: segmentRange.row.start - 1,
                         startColumnIndex: 9,
                         endColumnIndex: 13
                     },
@@ -181,8 +182,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 mergeCells: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: segmentRangeStart - 2,
-                        endRowIndex: segmentRangeStart,
+                        startRowIndex: segmentRange.row.start - 2,
+                        endRowIndex: segmentRange.row.start,
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
@@ -196,8 +197,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: segmentRangeStart - 2,
-                        endRowIndex: segmentRangeStart,
+                        startRowIndex: segmentRange.row.start - 2,
+                        endRowIndex: segmentRange.row.start,
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
@@ -214,8 +215,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: genderRangeStart - 1,
-                        endRowIndex: genderRangeStart,
+                        startRowIndex: genderRange.row.start - 1,
+                        endRowIndex: genderRange.row.start,
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
@@ -226,8 +227,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: ageRangeStart - 1,
-                        endRowIndex: ageRangeStart,
+                        startRowIndex: ageRange.row.start - 1,
+                        endRowIndex: ageRange.row.start,
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
@@ -238,8 +239,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: brandRangeStart - 1,
-                        endRowIndex: brandRangeStart,
+                        startRowIndex: brandRange.row.start - 1,
+                        endRowIndex: brandRange.row.start,
                         startColumnIndex: 6,
                         endColumnIndex: 11
                     },
@@ -250,8 +251,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: segmentRangeStart - 2,
-                        endRowIndex: segmentRangeStart,
+                        startRowIndex: segmentRange.row.start - 2,
+                        endRowIndex: segmentRange.row.start,
                         startColumnIndex: 0,
                         endColumnIndex: 13
                     },
@@ -262,10 +263,10 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: brandByOwnerRangeStart - 1,
-                        endRowIndex: brandByOwnerRangeStart,
+                        startRowIndex: brandByOwnerRange.row.start - 1,
+                        endRowIndex: brandByOwnerRange.row.start,
                         startColumnIndex: 0,
-                        endColumnIndex: brandByOwnerColumnCount
+                        endColumnIndex: brandByOwnerRange.column.end
                     },
                     ...styles.header
                 }
@@ -274,8 +275,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: segmentBoosterRangeStart - 1,
-                        endRowIndex: segmentBoosterRangeStart,
+                        startRowIndex: segmentBoosterRange.row.start - 1,
+                        endRowIndex: segmentBoosterRange.row.start,
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
@@ -286,8 +287,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: evBoosterRangeStart - 1,
-                        endRowIndex: evBoosterRangeStart,
+                        startRowIndex: evBoosterRange.row.start - 1,
+                        endRowIndex: evBoosterRange.row.start,
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
@@ -299,8 +300,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: genderRangeStart,
-                        endRowIndex: genderRangeEnd - 1,
+                        startRowIndex: genderRange.row.start,
+                        endRowIndex: genderRange.row.end - 1,
                         startColumnIndex: 0,
                         endColumnIndex: 1
                     },
@@ -311,8 +312,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: ageRangeStart,
-                        endRowIndex: ageRangeEnd - 1,
+                        startRowIndex: ageRange.row.start,
+                        endRowIndex: ageRange.row.end - 1,
                         startColumnIndex: 0,
                         endColumnIndex: 1
                     },
@@ -323,8 +324,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: brandRangeStart,
-                        endRowIndex: brandRangeEnd - 1,
+                        startRowIndex: brandRange.row.start,
+                        endRowIndex: brandRange.row.end - 1,
                         startColumnIndex: 6,
                         endColumnIndex: 7
                     },
@@ -335,8 +336,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: segmentRangeStart,
-                        endRowIndex: segmentRangeEnd - 1,
+                        startRowIndex: segmentRange.row.start,
+                        endRowIndex: segmentRange.row.end - 1,
                         startColumnIndex: 0,
                         endColumnIndex: 1
                     },
@@ -347,8 +348,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: brandByOwnerRangeStart,
-                        endRowIndex: brandByOwnerRangeEnd - 1,
+                        startRowIndex: brandByOwnerRange.row.start,
+                        endRowIndex: brandByOwnerRange.row.end - 1,
                         startColumnIndex: 0,
                         endColumnIndex: 1
                     },
@@ -359,8 +360,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: segmentBoosterRangeStart,
-                        endRowIndex: segmentBoosterRangeEnd - 1,
+                        startRowIndex: segmentBoosterRange.row.start,
+                        endRowIndex: segmentBoosterRange.row.end - 1,
                         startColumnIndex: 0,
                         endColumnIndex: 1
                     },
@@ -371,8 +372,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: evBoosterRangeStart,
-                        endRowIndex: evBoosterRangeEnd - 1,
+                        startRowIndex: evBoosterRange.row.start,
+                        endRowIndex: evBoosterRange.row.end - 1,
                         startColumnIndex: 0,
                         endColumnIndex: 1
                     },
@@ -384,8 +385,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: genderRangeEnd - 1,
-                        endRowIndex: genderRangeEnd,
+                        startRowIndex: genderRange.row.end - 1,
+                        endRowIndex: genderRange.row.end,
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
@@ -396,8 +397,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: ageRangeEnd - 1,
-                        endRowIndex: ageRangeEnd,
+                        startRowIndex: ageRange.row.end - 1,
+                        endRowIndex: ageRange.row.end,
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
@@ -408,8 +409,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: brandRangeEnd - 1,
-                        endRowIndex: brandRangeEnd,
+                        startRowIndex: brandRange.row.end - 1,
+                        endRowIndex: brandRange.row.end,
                         startColumnIndex: 6,
                         endColumnIndex: 11
                     },
@@ -420,8 +421,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: segmentRangeEnd - 1,
-                        endRowIndex: segmentRangeEnd,
+                        startRowIndex: segmentRange.row.end - 1,
+                        endRowIndex: segmentRange.row.end,
                         startColumnIndex: 0,
                         endColumnIndex: 13
                     },
@@ -432,10 +433,10 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: brandByOwnerRangeEnd - 1,
-                        endRowIndex: brandByOwnerRangeEnd,
+                        startRowIndex: brandByOwnerRange.row.end - 1,
+                        endRowIndex: brandByOwnerRange.row.end,
                         startColumnIndex: 0,
-                        endColumnIndex: brandByOwnerColumnCount
+                        endColumnIndex: brandByOwnerRange.column.end
                     },
                     ...styles.footer
                 }
@@ -444,8 +445,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: segmentBoosterRangeEnd - 1,
-                        endRowIndex: segmentBoosterRangeEnd,
+                        startRowIndex: segmentBoosterRange.row.end - 1,
+                        endRowIndex: segmentBoosterRange.row.end,
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
@@ -456,8 +457,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: evBoosterRangeEnd - 1,
-                        endRowIndex: evBoosterRangeEnd,
+                        startRowIndex: evBoosterRange.row.end - 1,
+                        endRowIndex: evBoosterRange.row.end,
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
@@ -469,8 +470,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 updateBorders: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: genderRangeStart - 1,
-                        endRowIndex: genderRangeEnd,
+                        startRowIndex: genderRange.row.start - 1,
+                        endRowIndex: genderRange.row.end,
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
@@ -481,8 +482,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 updateBorders: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: ageRangeStart - 1,
-                        endRowIndex: ageRangeEnd,
+                        startRowIndex: ageRange.row.start - 1,
+                        endRowIndex: ageRange.row.end,
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
@@ -493,8 +494,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 updateBorders: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: brandRangeStart - 1,
-                        endRowIndex: brandRangeEnd,
+                        startRowIndex: brandRange.row.start - 1,
+                        endRowIndex: brandRange.row.end,
                         startColumnIndex: 6,
                         endColumnIndex: 11
                     },
@@ -505,8 +506,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 updateBorders: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: segmentRangeStart - 2,
-                        endRowIndex: segmentRangeEnd,
+                        startRowIndex: segmentRange.row.start - 2,
+                        endRowIndex: segmentRange.row.end,
                         startColumnIndex: 0,
                         endColumnIndex: 13
                     },
@@ -517,10 +518,10 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 updateBorders: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: brandByOwnerRangeStart - 1,
-                        endRowIndex: brandByOwnerRangeEnd,
+                        startRowIndex: brandByOwnerRange.row.start - 1,
+                        endRowIndex: brandByOwnerRange.row.end,
                         startColumnIndex: 0,
-                        endColumnIndex: brandByOwnerColumnCount
+                        endColumnIndex: brandByOwnerRange.column.end
                     },
                     ...styles.borders
                 },
@@ -529,8 +530,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 updateBorders: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: segmentBoosterRangeStart - 1,
-                        endRowIndex: segmentBoosterRangeEnd,
+                        startRowIndex: segmentBoosterRange.row.start - 1,
+                        endRowIndex: segmentBoosterRange.row.end,
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
@@ -541,8 +542,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 updateBorders: {
                     range: {
                         sheetId: tabId,
-                        startRowIndex: evBoosterRangeStart - 1,
-                        endRowIndex: evBoosterRangeEnd,
+                        startRowIndex: evBoosterRange.row.start - 1,
+                        endRowIndex: evBoosterRange.row.end,
                         startColumnIndex: 0,
                         endColumnIndex: 5
                     },
@@ -558,8 +559,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                     repeatCell: {
                         range: {
                             sheetId: tabId,
-                            startRowIndex: regionRangeStart - 1,
-                            endRowIndex: regionRangeStart,
+                            startRowIndex: regionRange.row.start - 1,
+                            endRowIndex: regionRange.row.start,
                             startColumnIndex: 0,
                             endColumnIndex: 5
                         },
@@ -570,8 +571,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                     repeatCell: {
                         range: {
                             sheetId: tabId,
-                            startRowIndex: regionRangeStart,
-                            endRowIndex: regionRangeEnd - 1,
+                            startRowIndex: regionRange.row.start,
+                            endRowIndex: regionRange.row.end - 1,
                             startColumnIndex: 0,
                             endColumnIndex: 1
                         },
@@ -582,8 +583,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                     repeatCell: {
                         range: {
                             sheetId: tabId,
-                            startRowIndex: regionRangeEnd - 1,
-                            endRowIndex: regionRangeEnd,
+                            startRowIndex: regionRange.row.end - 1,
+                            endRowIndex: regionRange.row.end,
                             startColumnIndex: 0,
                             endColumnIndex: 5
                         },
@@ -594,8 +595,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                     updateBorders: {
                         range: {
                             sheetId: tabId,
-                            startRowIndex: regionRangeStart - 1,
-                            endRowIndex: regionRangeEnd,
+                            startRowIndex: regionRange.row.start - 1,
+                            endRowIndex: regionRange.row.end,
                             startColumnIndex: 0,
                             endColumnIndex: 5
                         },
