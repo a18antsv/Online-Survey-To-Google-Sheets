@@ -82,11 +82,7 @@ export const updateTabs = async (auth, countryDataByKey) => {
         if (getSpreadsheetError) return console.error(`Could not get spreadsheet by id ${SPREADSHEET_ID}`);
     }
 
-    const allCountriesValues = [];
-    const allCountriesMergeRequests = [];
-    const allCountriesStyleRequests = [];
-
-    for (const {tab, tables} of Object.values(countryDataByKey)) {
+    const requests = Object.values(countryDataByKey).reduce((current, {tab, tables}) => {
         const tabId = spreadsheet.data.sheets.find(object => tab === object.properties.title).properties.sheetId;
 
         const genderRange = getRange(1, 1, tables["gender"]);
@@ -102,7 +98,7 @@ export const updateTabs = async (auth, countryDataByKey) => {
         const segmentBoosterRange = getRange(brandByOwnerRange.row.end + 2, 1, tables["segmentBooster"]);
         const evBoosterRange = getRange(segmentBoosterRange.row.end + 2, 1, tables["evBooster"]);
 
-        const values = [
+        const valueRequests = [
             {
                 range: `${tab}!${genderRange.toString()}`,
                 values: tables["gender"]
@@ -239,6 +235,18 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
+                        startRowIndex: regionRange.row.start - 1,
+                        endRowIndex: regionRange.row.start,
+                        startColumnIndex: regionRange.column.start - 1,
+                        endColumnIndex: regionRange.column.end
+                    },
+                    ...styles.header
+                }
+            },
+            {
+                repeatCell: {
+                    range: {
+                        sheetId: tabId,
                         startRowIndex: brandRange.row.start - 1,
                         endRowIndex: brandRange.row.start,
                         startColumnIndex: brandRange.column.start - 1,
@@ -316,6 +324,18 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         endRowIndex: ageRange.row.end - 1,
                         startColumnIndex: ageRange.column.start - 1,
                         endColumnIndex: ageRange.column.start
+                    },
+                    ...styles.firstColumn
+                }
+            },
+            {
+                repeatCell: {
+                    range: {
+                        sheetId: tabId,
+                        startRowIndex: regionRange.row.start,
+                        endRowIndex: regionRange.row.end - 1,
+                        startColumnIndex: regionRange.column.start - 1,
+                        endColumnIndex: regionRange.column.start
                     },
                     ...styles.firstColumn
                 }
@@ -409,6 +429,18 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 repeatCell: {
                     range: {
                         sheetId: tabId,
+                        startRowIndex: regionRange.row.end - 1,
+                        endRowIndex: regionRange.row.end,
+                        startColumnIndex: regionRange.column.start - 1,
+                        endColumnIndex: regionRange.column.end
+                    },
+                    ...styles.footer
+                }
+            },
+            {
+                repeatCell: {
+                    range: {
+                        sheetId: tabId,
                         startRowIndex: brandRange.row.end - 1,
                         endRowIndex: brandRange.row.end,
                         startColumnIndex: brandRange.column.start - 1,
@@ -494,6 +526,18 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 updateBorders: {
                     range: {
                         sheetId: tabId,
+                        startRowIndex: regionRange.row.start - 1,
+                        endRowIndex: regionRange.row.end,
+                        startColumnIndex: regionRange.column.start - 1,
+                        endColumnIndex: regionRange.column.end
+                    },
+                    ...styles.borders
+                }
+            },
+            {
+                updateBorders: {
+                    range: {
+                        sheetId: tabId,
                         startRowIndex: brandRange.row.start - 1,
                         endRowIndex: brandRange.row.end,
                         startColumnIndex: brandRange.column.start - 1,
@@ -552,79 +596,28 @@ export const updateTabs = async (auth, countryDataByKey) => {
             },
         ];
 
-        if (tables["region"].length > 0) {
-            const regionStyleRequests = [
-                {
-                    repeatCell: {
-                        range: {
-                            sheetId: tabId,
-                            startRowIndex: regionRange.row.start - 1,
-                            endRowIndex: regionRange.row.start,
-                            startColumnIndex: regionRange.column.start - 1,
-                            endColumnIndex: regionRange.column.end
-                        },
-                        ...styles.header
-                    }
-                },
-                {
-                    repeatCell: {
-                        range: {
-                            sheetId: tabId,
-                            startRowIndex: regionRange.row.start,
-                            endRowIndex: regionRange.row.end - 1,
-                            startColumnIndex: regionRange.column.start - 1,
-                            endColumnIndex: regionRange.column.start
-                        },
-                        ...styles.firstColumn
-                    }
-                },
-                {
-                    repeatCell: {
-                        range: {
-                            sheetId: tabId,
-                            startRowIndex: regionRange.row.end - 1,
-                            endRowIndex: regionRange.row.end,
-                            startColumnIndex: regionRange.column.start - 1,
-                            endColumnIndex: regionRange.column.end
-                        },
-                        ...styles.footer
-                    }
-                },
-                {
-                    updateBorders: {
-                        range: {
-                            sheetId: tabId,
-                            startRowIndex: regionRange.row.start - 1,
-                            endRowIndex: regionRange.row.end,
-                            startColumnIndex: regionRange.column.start - 1,
-                            endColumnIndex: regionRange.column.end
-                        },
-                        ...styles.borders
-                    }
-                }
-            ];
-            allCountriesStyleRequests.push(...regionStyleRequests);
+        return {
+            valueRequests: [current.valueRequests, ...valueRequests],
+            mergeRequests: [current.mergeRequests, ...mergeRequests],
+            styleRequests: [current.styleRequests, ...styleRequests],
         }
-        allCountriesValues.push(...values);
-        allCountriesMergeRequests.push(...mergeRequests);
-        allCountriesStyleRequests.push(...styleRequests);
-    }
+    }, {});
 
     const [valueUpdateError] = await handler(api.spreadsheets.values.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
-        requestBody: {valueInputOption: "USER_ENTERED", data: allCountriesValues}
+        requestBody: {valueInputOption: "USER_ENTERED", data: requests.valueRequests}
     }));
     if (valueUpdateError) console.error(`Value update error: ${valueUpdateError}`);
 
     const [mergeUpdateError] = await handler(api.spreadsheets.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
-        resource: {requests: allCountriesMergeRequests}
+        resource: {requests: requests.mergeRequests}
     }));
     if (mergeUpdateError) console.error(`Merge update error: ${mergeUpdateError}`);
 
     const [styleUpdateError] = await handler(api.spreadsheets.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
-        resource: {requests: allCountriesStyleRequests}
+        resource: {requests: requests.styleRequests}
     }));
     if (styleUpdateError) console.error(`Style update error: ${styleUpdateError}`);
 
