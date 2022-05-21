@@ -47,7 +47,7 @@ const indexToChar = index => String.fromCharCode(CAPITAL_ASCII_START - 1 + index
 
 const getRange = (rowStartIndex, columnStartIndex, rows) => {
     const rowEndIndex = rows.length === 0 ? rowStartIndex : rowStartIndex - 1 + rows.length;
-    const columnEndIndex = columnStartIndex - 1 + rows?.[0]?.length ?? 0;
+    const columnEndIndex = columnStartIndex - 1 + (rows?.[0]?.length ?? 1);
     const startColumn = indexToChar(columnStartIndex);
     const endColumn = indexToChar(columnEndIndex);
 
@@ -160,8 +160,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: segmentRange.row.start - 2,
                         endRowIndex: segmentRange.row.start - 1,
-                        startColumnIndex: 5,
-                        endColumnIndex: 9
+                        startColumnIndex: segmentByOwnerRange.column.start - 1,
+                        endColumnIndex: segmentByOwnerRange.column.end
                     },
                     mergeType: "MERGE_ROWS"
                 }
@@ -172,8 +172,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: segmentRange.row.start - 2,
                         endRowIndex: segmentRange.row.start - 1,
-                        startColumnIndex: 9,
-                        endColumnIndex: 13
+                        startColumnIndex: segmentByIntenderRange.column.start - 1,
+                        endColumnIndex: segmentByIntenderRange.column.end
                     },
                     mergeType: "MERGE_ROWS"
                 }
@@ -184,8 +184,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: segmentRange.row.start - 2,
                         endRowIndex: segmentRange.row.start,
-                        startColumnIndex: 0,
-                        endColumnIndex: 5
+                        startColumnIndex: segmentRange.column.start - 1,
+                        endColumnIndex: segmentRange.column.end
                     },
                     mergeType: "MERGE_COLUMNS"
                 }
@@ -199,8 +199,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: segmentRange.row.start - 2,
                         endRowIndex: segmentRange.row.start,
-                        startColumnIndex: 0,
-                        endColumnIndex: 5
+                        startColumnIndex: segmentRange.column.start - 1,
+                        endColumnIndex: segmentRange.column.end
                     },
                     cell: {
                         userEnteredFormat: {
@@ -217,8 +217,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: genderRange.row.start - 1,
                         endRowIndex: genderRange.row.start,
-                        startColumnIndex: 0,
-                        endColumnIndex: 5
+                        startColumnIndex: genderRange.column.start - 1,
+                        endColumnIndex: genderRange.column.end
                     },
                     ...styles.header
                 }
@@ -229,8 +229,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: ageRange.row.start - 1,
                         endRowIndex: ageRange.row.start,
-                        startColumnIndex: 0,
-                        endColumnIndex: 5
+                        startColumnIndex: ageRange.column.start - 1,
+                        endColumnIndex: ageRange.column.end
                     },
                     ...styles.header
                 }
@@ -241,8 +241,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: brandRange.row.start - 1,
                         endRowIndex: brandRange.row.start,
-                        startColumnIndex: 6,
-                        endColumnIndex: 11
+                        startColumnIndex: brandRange.column.start - 1,
+                        endColumnIndex: brandRange.column.end
                     },
                     ...styles.header
                 }
@@ -253,8 +253,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: segmentRange.row.start - 2,
                         endRowIndex: segmentRange.row.start,
-                        startColumnIndex: 0,
-                        endColumnIndex: 13
+                        startColumnIndex: segmentRange.column.start - 1,
+                        endColumnIndex: segmentByIntenderRange.column.end
                     },
                     ...styles.header
                 }
@@ -265,7 +265,7 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: brandByOwnerRange.row.start - 1,
                         endRowIndex: brandByOwnerRange.row.start,
-                        startColumnIndex: 0,
+                        startColumnIndex: brandByOwnerRange.column.start - 1,
                         endColumnIndex: brandByOwnerRange.column.end
                     },
                     ...styles.header
@@ -277,8 +277,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: segmentBoosterRange.row.start - 1,
                         endRowIndex: segmentBoosterRange.row.start,
-                        startColumnIndex: 0,
-                        endColumnIndex: 5
+                        startColumnIndex: segmentBoosterRange.column.start - 1,
+                        endColumnIndex: segmentBoosterRange.column.end
                     },
                     ...styles.header
                 }
@@ -289,8 +289,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: evBoosterRange.row.start - 1,
                         endRowIndex: evBoosterRange.row.start,
-                        startColumnIndex: 0,
-                        endColumnIndex: 5
+                        startColumnIndex: evBoosterRange.column.start - 1,
+                        endColumnIndex: evBoosterRange.column.end
                     },
                     ...styles.header
                 }
@@ -302,8 +302,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: genderRange.row.start,
                         endRowIndex: genderRange.row.end - 1,
-                        startColumnIndex: 0,
-                        endColumnIndex: 1
+                        startColumnIndex: genderRange.column.start - 1,
+                        endColumnIndex: genderRange.column.start
                     },
                     ...styles.firstColumn
                 }
@@ -314,8 +314,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: ageRange.row.start,
                         endRowIndex: ageRange.row.end - 1,
-                        startColumnIndex: 0,
-                        endColumnIndex: 1
+                        startColumnIndex: ageRange.column.start - 1,
+                        endColumnIndex: ageRange.column.start
                     },
                     ...styles.firstColumn
                 }
@@ -326,8 +326,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: brandRange.row.start,
                         endRowIndex: brandRange.row.end - 1,
-                        startColumnIndex: 6,
-                        endColumnIndex: 7
+                        startColumnIndex: brandRange.column.start - 1,
+                        endColumnIndex: brandRange.column.start
                     },
                     ...styles.firstColumn
                 }
@@ -338,8 +338,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: segmentRange.row.start,
                         endRowIndex: segmentRange.row.end - 1,
-                        startColumnIndex: 0,
-                        endColumnIndex: 1
+                        startColumnIndex: segmentRange.column.start - 1,
+                        endColumnIndex: segmentRange.column.start
                     },
                     ...styles.firstColumn
                 }
@@ -350,8 +350,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: brandByOwnerRange.row.start,
                         endRowIndex: brandByOwnerRange.row.end - 1,
-                        startColumnIndex: 0,
-                        endColumnIndex: 1
+                        startColumnIndex: brandByOwnerRange.column.start - 1,
+                        endColumnIndex: brandByOwnerRange.column.start
                     },
                     ...styles.firstColumn
                 }
@@ -362,8 +362,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: segmentBoosterRange.row.start,
                         endRowIndex: segmentBoosterRange.row.end - 1,
-                        startColumnIndex: 0,
-                        endColumnIndex: 1
+                        startColumnIndex: segmentBoosterRange.column.start - 1,
+                        endColumnIndex: segmentBoosterRange.column.start
                     },
                     ...styles.firstColumn
                 }
@@ -374,8 +374,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: evBoosterRange.row.start,
                         endRowIndex: evBoosterRange.row.end - 1,
-                        startColumnIndex: 0,
-                        endColumnIndex: 1
+                        startColumnIndex: evBoosterRange.column.start - 1,
+                        endColumnIndex: evBoosterRange.column.start
                     },
                     ...styles.firstColumn
                 }
@@ -387,8 +387,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: genderRange.row.end - 1,
                         endRowIndex: genderRange.row.end,
-                        startColumnIndex: 0,
-                        endColumnIndex: 5
+                        startColumnIndex: genderRange.column.start - 1,
+                        endColumnIndex: genderRange.column.end
                     },
                     ...styles.footer
                 }
@@ -399,8 +399,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: ageRange.row.end - 1,
                         endRowIndex: ageRange.row.end,
-                        startColumnIndex: 0,
-                        endColumnIndex: 5
+                        startColumnIndex: ageRange.column.start - 1,
+                        endColumnIndex: ageRange.column.end
                     },
                     ...styles.footer
                 }
@@ -411,8 +411,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: brandRange.row.end - 1,
                         endRowIndex: brandRange.row.end,
-                        startColumnIndex: 6,
-                        endColumnIndex: 11
+                        startColumnIndex: brandRange.column.start - 1,
+                        endColumnIndex: brandRange.column.end
                     },
                     ...styles.footer
                 }
@@ -423,8 +423,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: segmentRange.row.end - 1,
                         endRowIndex: segmentRange.row.end,
-                        startColumnIndex: 0,
-                        endColumnIndex: 13
+                        startColumnIndex: segmentRange.column.start - 1,
+                        endColumnIndex: segmentByIntenderRange.column.end
                     },
                     ...styles.footer
                 }
@@ -435,7 +435,7 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: brandByOwnerRange.row.end - 1,
                         endRowIndex: brandByOwnerRange.row.end,
-                        startColumnIndex: 0,
+                        startColumnIndex: brandByOwnerRange.column.start - 1,
                         endColumnIndex: brandByOwnerRange.column.end
                     },
                     ...styles.footer
@@ -447,8 +447,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: segmentBoosterRange.row.end - 1,
                         endRowIndex: segmentBoosterRange.row.end,
-                        startColumnIndex: 0,
-                        endColumnIndex: 5
+                        startColumnIndex: segmentBoosterRange.column.start - 1,
+                        endColumnIndex: segmentBoosterRange.column.end
                     },
                     ...styles.footer
                 }
@@ -459,8 +459,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: evBoosterRange.row.end - 1,
                         endRowIndex: evBoosterRange.row.end,
-                        startColumnIndex: 0,
-                        endColumnIndex: 5
+                        startColumnIndex: evBoosterRange.column.start - 1,
+                        endColumnIndex: evBoosterRange.column.end
                     },
                     ...styles.footer
                 }
@@ -472,8 +472,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: genderRange.row.start - 1,
                         endRowIndex: genderRange.row.end,
-                        startColumnIndex: 0,
-                        endColumnIndex: 5
+                        startColumnIndex: genderRange.column.start - 1,
+                        endColumnIndex: genderRange.column.end
                     },
                     ...styles.borders
                 }
@@ -484,8 +484,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: ageRange.row.start - 1,
                         endRowIndex: ageRange.row.end,
-                        startColumnIndex: 0,
-                        endColumnIndex: 5
+                        startColumnIndex: ageRange.column.start - 1,
+                        endColumnIndex: ageRange.column.end
                     },
                     ...styles.borders
                 }
@@ -496,8 +496,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: brandRange.row.start - 1,
                         endRowIndex: brandRange.row.end,
-                        startColumnIndex: 6,
-                        endColumnIndex: 11
+                        startColumnIndex: brandRange.column.start - 1,
+                        endColumnIndex: brandRange.column.end
                     },
                     ...styles.borders
                 }
@@ -508,8 +508,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: segmentRange.row.start - 2,
                         endRowIndex: segmentRange.row.end,
-                        startColumnIndex: 0,
-                        endColumnIndex: 13
+                        startColumnIndex: segmentRange.column.start - 1,
+                        endColumnIndex: segmentByIntenderRange.column.end
                     },
                     ...styles.borders
                 }
@@ -520,7 +520,7 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: brandByOwnerRange.row.start - 1,
                         endRowIndex: brandByOwnerRange.row.end,
-                        startColumnIndex: 0,
+                        startColumnIndex: brandByOwnerRange.column.start - 1,
                         endColumnIndex: brandByOwnerRange.column.end
                     },
                     ...styles.borders
@@ -532,8 +532,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: segmentBoosterRange.row.start - 1,
                         endRowIndex: segmentBoosterRange.row.end,
-                        startColumnIndex: 0,
-                        endColumnIndex: 5
+                        startColumnIndex: segmentBoosterRange.column.start - 1,
+                        endColumnIndex: segmentBoosterRange.column.end
                     },
                     ...styles.borders
                 }
@@ -544,15 +544,14 @@ export const updateTabs = async (auth, countryDataByKey) => {
                         sheetId: tabId,
                         startRowIndex: evBoosterRange.row.start - 1,
                         endRowIndex: evBoosterRange.row.end,
-                        startColumnIndex: 0,
-                        endColumnIndex: 5
+                        startColumnIndex: evBoosterRange.column.start - 1,
+                        endColumnIndex: evBoosterRange.column.end
                     },
                     ...styles.borders
                 }
             },
         ];
 
-        // Update region table only for countries that have regions
         if (tables["region"].length > 0) {
             const regionStyleRequests = [
                 {
@@ -561,8 +560,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                             sheetId: tabId,
                             startRowIndex: regionRange.row.start - 1,
                             endRowIndex: regionRange.row.start,
-                            startColumnIndex: 0,
-                            endColumnIndex: 5
+                            startColumnIndex: regionRange.column.start - 1,
+                            endColumnIndex: regionRange.column.end
                         },
                         ...styles.header
                     }
@@ -573,8 +572,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                             sheetId: tabId,
                             startRowIndex: regionRange.row.start,
                             endRowIndex: regionRange.row.end - 1,
-                            startColumnIndex: 0,
-                            endColumnIndex: 1
+                            startColumnIndex: regionRange.column.start - 1,
+                            endColumnIndex: regionRange.column.start
                         },
                         ...styles.firstColumn
                     }
@@ -585,8 +584,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                             sheetId: tabId,
                             startRowIndex: regionRange.row.end - 1,
                             endRowIndex: regionRange.row.end,
-                            startColumnIndex: 0,
-                            endColumnIndex: 5
+                            startColumnIndex: regionRange.column.start - 1,
+                            endColumnIndex: regionRange.column.end
                         },
                         ...styles.footer
                     }
@@ -597,8 +596,8 @@ export const updateTabs = async (auth, countryDataByKey) => {
                             sheetId: tabId,
                             startRowIndex: regionRange.row.start - 1,
                             endRowIndex: regionRange.row.end,
-                            startColumnIndex: 0,
-                            endColumnIndex: 5
+                            startColumnIndex: regionRange.column.start - 1,
+                            endColumnIndex: regionRange.column.end
                         },
                         ...styles.borders
                     }
