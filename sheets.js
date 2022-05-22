@@ -118,7 +118,7 @@ const getStyleRequest = (sheetId, range, options = {}) => {
             ...styles.borders
         }
     };
-    
+
     const styleRequests = [];
     if (options.top.hasStyle) styleRequests.push(top);
     if (options.bottom.hasStyle) styleRequests.push(bottom);
@@ -168,46 +168,41 @@ export const updateTabs = async (auth, countryDataByKey) => {
         if (getSpreadsheetError) return console.error(`Could not get spreadsheet by id ${SPREADSHEET_ID}`);
     }
 
-    const requests = Object.values(countryDataByKey).reduce((previousCountry, {tab, tables}) => {
+    const valueRequests = [];
+    const styleRequests = [];
+    const mergeRequests = [];
+
+    Object.values(countryDataByKey).forEach(({tab, tables}) => {
         const sheetId = spreadsheet.data.sheets.find(object => tab === object.properties.title).properties.sheetId;
 
-        const valueRequests = [];
-        const styleRequests = [];
-        const mergeRequests = [];
-
         Object.values(tables).forEach(({range, rows, styleOptions, merges}) => {
+            if (rows.length === 0) return;
             valueRequests.push(getValueRequest(tab, range, rows));
             styleRequests.push(getStyleRequest(sheetId, range, styleOptions));
             mergeRequests.push(...(merges ?? []).map(merge => getMergeRequest(sheetId, merge.mergeType, merge.range)));
         });
+    });
 
-        return {
-            valueRequests: [previousCountry.valueRequests, ...valueRequests],
-            mergeRequests: [previousCountry.mergeRequests, ...mergeRequests],
-            styleRequests: [previousCountry.styleRequests, ...styleRequests],
-        }
-    }, {});
-
-    if (requests.valueRequests.length > 0) {
+    if (valueRequests.length > 0) {
         const [valueUpdateError] = await handler(api.spreadsheets.values.batchUpdate({
             spreadsheetId: SPREADSHEET_ID,
-            requestBody: {valueInputOption: "USER_ENTERED", data: requests.valueRequests}
+            requestBody: {valueInputOption: "USER_ENTERED", data: valueRequests}
         }));
         if (valueUpdateError) console.error(`Value update error: ${valueUpdateError}`);
     }
 
-    if (requests.mergeRequests.length > 0) {
+    if (mergeRequests.length > 0) {
         const [mergeUpdateError] = await handler(api.spreadsheets.batchUpdate({
             spreadsheetId: SPREADSHEET_ID,
-            resource: {requests: requests.mergeRequests}
+            resource: {requests: mergeRequests}
         }));
         if (mergeUpdateError) console.error(`Merge update error: ${mergeUpdateError}`);
     }
 
-    if (requests.styleRequests.length > 0) {
+    if (styleRequests.length > 0) {
         const [styleUpdateError] = await handler(api.spreadsheets.batchUpdate({
             spreadsheetId: SPREADSHEET_ID,
-            resource: {requests: requests.styleRequests}
+            resource: {requests: styleRequests}
         }));
         if (styleUpdateError) console.error(`Style update error: ${styleUpdateError}`);
     }

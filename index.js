@@ -3,6 +3,10 @@ import {request} from "./request.js";
 import {readCredentialsAndAuthorize} from "./auth.js";
 import {updateTabs} from "./sheets.js";
 
+const {
+    FILTER_IN,
+} = process.env;
+
 const bodies = {
     getCountries: "CRUD=SELECT&COMMAND=GET_TOTAL_QUOTA",
     getCountryQuota: "CRUD=SELECT&COMMAND=GET_COUNTRY_QUOTA&PKEY=",
@@ -15,14 +19,7 @@ const bodies = {
 };
 
 const CAPITAL_ASCII_START = 65;
-const excludeCountries = [
-    "2022_SA",
-    "2022_EG",
-    "2022_AE",
-    "2022_IL",
-    "2022_KZ",
-    "2022_MA",
-];
+const includeCountries = FILTER_IN.split(",").map(countryCode => `2022_${countryCode}`);
 
 const indexToChar = index => String.fromCharCode(CAPITAL_ASCII_START - 1 + index);
 const getRange = (rowStartIndex, columnStartIndex, rows) => {
@@ -46,7 +43,7 @@ const getRange = (rowStartIndex, columnStartIndex, rows) => {
 
 (async () => {
     const countries = (await request(bodies.getCountries))
-        .filter(country => !excludeCountries.includes(country["PKEY"]));
+        .filter(country => includeCountries.includes(country["PKEY"]));
 
     const countryDataByKey = {};
 
@@ -59,7 +56,7 @@ const getRange = (rowStartIndex, columnStartIndex, rows) => {
         const countryQuotaSeries = await getCountryQuotaSeriesWithCount(key);
         const regionData = await getRegionData(key, countryQuota);
         const ageData = await getAgeData(key, countryQuota);
-
+        
         const genderRows = getTableRows("Gender", getGenderData(countryQuota));
         const ageRows = getTableRows("Age", ageData);
         const regionRows = getTableRows("Region", regionData);
@@ -289,6 +286,8 @@ function getEvBooster(countryQuotaSeries) {
 }
 
 async function getOwnerBrandTableRows(key, countryQuotaSeries) {
+    if (countryQuotaSeries.length === 0) return [];
+
     const ownerBrand = await request(bodies.ownerBrand + key);
 
     const segmentQuota = countryQuotaSeries.filter(row => row["QID_2"] === "Q_Seg_Quota" && row["Q83_VAL"] === "1");
@@ -331,6 +330,8 @@ async function getOwnerBrandTableRows(key, countryQuotaSeries) {
 }
 
 function getTableRows(name, rows, options = {}) {
+    if (rows.length === 0) return [];
+
     options = {
         removeFirst: options?.removeFirst ?? false,
         addExtraHeader: options?.addExtraHeader ?? false,
