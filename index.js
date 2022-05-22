@@ -37,6 +37,21 @@ const excludeCountries = [
         const countryQuotaSeries = await getCountryQuotaSeriesWithCount(key);
         const ownerBrand = await getOwnerBrandTableRows(key, countryQuotaSeries);
 
+        const mainSegmentRows = getTableRows("Main Segment", getMainSegmentTotalData(countryQuota));
+        const mainSegmentByOwnerRows = getTableRows("Owner", getMainSegmentOwnerData(countryQuotaSeries), true)
+        const mainSegmentByIntenderRows = getTableRows("Intender", getMainSegmentIntenderData(countryQuotaSeries), true)
+
+        const mainSegment = mainSegmentRows.reduce((previous, current, index) => {
+          return [
+            ...previous,
+            [
+              ...current,
+              ...(mainSegmentByOwnerRows?.[index] ?? []),
+              ...(mainSegmentByIntenderRows?.[index] ?? []),
+            ],
+          ];
+        }, []);
+
         countryDataByKey[key] = {
             tab: `${country["country_code"]}. ${key.split("_")[1]}`,
             tables: {
@@ -44,9 +59,7 @@ const excludeCountries = [
                 age: getTableRows("Age", await getAgeData(key, countryQuota)),
                 gender: getTableRows("Gender", getGenderData(countryQuota)),
                 brand: getTableRows("Brand", getBrandData(countryQuota)),
-                mainSegment: getTableRows("Main Segment", getMainSegmentTotalData(countryQuota)),
-                mainSegmentByOwner: getTableRows("Owner", getMainSegmentOwnerData(countryQuotaSeries), true),
-                mainSegmentByIntender: getTableRows("Intender", getMainSegmentIntenderData(countryQuotaSeries), true),
+                mainSegment: mainSegment,
                 segmentBooster: getTableRows("Seg Booster", getSegmentBooster(countryQuotaSeries)),
                 evBooster: getTableRows("EV Booster", getEvBooster(countryQuotaSeries)),
                 ownerBrand,

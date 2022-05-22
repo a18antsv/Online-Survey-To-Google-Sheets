@@ -64,6 +64,66 @@ const getRange = (rowStartIndex, columnStartIndex, rows) => {
     }
 }
 
+const getStyleRequest = (sheetId, range) => {
+    return [
+        {
+            repeatCell: {
+                range: {
+                    sheetId,
+                    startRowIndex: range.row.start - 1,
+                    endRowIndex: range.row.start,
+                    startColumnIndex: range.column.start - 1,
+                    endColumnIndex: range.column.end
+                },
+                ...styles.header
+            },
+        },
+        {
+            repeatCell: {
+                range: {
+                    sheetId,
+                    startRowIndex: range.row.start,
+                    endRowIndex: range.row.end - 1,
+                    startColumnIndex: range.column.start - 1,
+                    endColumnIndex: range.column.start
+                },
+                ...styles.firstColumn
+            },
+        },
+        {
+            repeatCell: {
+                range: {
+                    sheetId,
+                    startRowIndex: range.row.end - 1,
+                    endRowIndex: range.row.end,
+                    startColumnIndex: range.column.start - 1,
+                    endColumnIndex: range.column.end
+                },
+                ...styles.footer
+            },
+        },
+        {
+            updateBorders: {
+                range: {
+                    sheetId,
+                    startRowIndex: range.row.start - 1,
+                    endRowIndex: range.row.end,
+                    startColumnIndex: range.column.start - 1,
+                    endColumnIndex: range.column.end
+                },
+                ...styles.borders
+            }
+        }
+    ];
+}
+
+const getValueRequest = (tab, range, table) => {
+    return {
+        range: `${tab}!${range.toString()}`,
+        values: table
+    }
+}
+
 export const updateTabs = async (auth, countryDataByKey) => {
     console.log("Updating tabs...");
 
@@ -83,50 +143,26 @@ export const updateTabs = async (auth, countryDataByKey) => {
     }
 
     const requests = Object.values(countryDataByKey).reduce((current, {tab, tables}) => {
-        const tabId = spreadsheet.data.sheets.find(object => tab === object.properties.title).properties.sheetId;
+        const sheetId = spreadsheet.data.sheets.find(object => tab === object.properties.title).properties.sheetId;
 
         const genderRange = getRange(1, 1, tables["gender"]);
         const ageRange = getRange(genderRange.row.end + 2, 1, tables["age"]);
         const regionRange = getRange(ageRange.row.end + 2, 1, tables["region"])
-
         const segmentRange = getRange(regionRange.row.end + 3, 1, tables["mainSegment"]);
-        const segmentByOwnerRange = getRange(regionRange.row.end + 3, segmentRange.column.end + 1, tables["mainSegmentByOwner"]);
-        const segmentByIntenderRange = getRange(regionRange.row.end + 3, segmentByOwnerRange.column.end + 1, tables["mainSegmentByIntender"]);
-
         const brandRange = getRange(1, genderRange.column.end + 2, tables["brand"]);
         const brandByOwnerRange = getRange(segmentRange.row.end + 2, 1, tables["ownerBrand"]);
         const segmentBoosterRange = getRange(brandByOwnerRange.row.end + 2, 1, tables["segmentBooster"]);
         const evBoosterRange = getRange(segmentBoosterRange.row.end + 2, 1, tables["evBooster"]);
 
         const valueRequests = [
-            {
-                range: `${tab}!${genderRange.toString()}`,
-                values: tables["gender"]
-            },
-            {
-                range: `${tab}!${ageRange.toString()}`,
-                values: tables["age"]
-            },
-            {
-                range: `${tab}!${brandRange.toString()}`,
-                values: tables["brand"]
-            },
-            {
-                range: `${tab}!${regionRange.toString()}`,
-                values: tables["region"]
-            },
-            {
-                range: `${tab}!${segmentRange.toString()}`,
-                values: tables["mainSegment"]
-            },
-            {
-                range: `${tab}!${segmentByOwnerRange.toString()}`,
-                values: tables["mainSegmentByOwner"]
-            },
-            {
-                range: `${tab}!${segmentByIntenderRange.toString()}`,
-                values: tables["mainSegmentByIntender"]
-            },
+            getValueRequest(tab, genderRange, tables["gender"]),
+            getValueRequest(tab, ageRange, tables["age"]),
+            getValueRequest(tab, brandRange, tables["brand"]),
+            getValueRequest(tab, regionRange, tables["region"]),
+            getValueRequest(tab, segmentRange, tables["mainSegment"]),
+            getValueRequest(tab, brandByOwnerRange, tables["ownerBrand"]),
+            getValueRequest(tab, segmentBoosterRange, tables["segmentBooster"]),
+            getValueRequest(tab, evBoosterRange, tables["evBooster"]),
             {
                 range: `${tab}!F${segmentRange.row.start - 1}`,
                 values: [["Owner"]]
@@ -135,29 +171,17 @@ export const updateTabs = async (auth, countryDataByKey) => {
                 range: `${tab}!J${segmentRange.row.start - 1}`,
                 values: [["Intender"]]
             },
-            {
-                range: `${tab}!${brandByOwnerRange.toString()}`,
-                values: tables["ownerBrand"]
-            },
-            {
-                range: `${tab}!${segmentBoosterRange.toString()}`,
-                values: tables["segmentBooster"]
-            },
-            {
-                range: `${tab}!${evBoosterRange.toString()}`,
-                values: tables["evBooster"]
-            },
         ];
 
         const mergeRequests = [
             {
                 mergeCells: {
                     range: {
-                        sheetId: tabId,
+                        sheetId,
                         startRowIndex: segmentRange.row.start - 2,
                         endRowIndex: segmentRange.row.start - 1,
-                        startColumnIndex: segmentByOwnerRange.column.start - 1,
-                        endColumnIndex: segmentByOwnerRange.column.end
+                        startColumnIndex: 5,
+                        endColumnIndex: 9
                     },
                     mergeType: "MERGE_ROWS"
                 }
@@ -165,38 +189,38 @@ export const updateTabs = async (auth, countryDataByKey) => {
             {
                 mergeCells: {
                     range: {
-                        sheetId: tabId,
+                        sheetId,
                         startRowIndex: segmentRange.row.start - 2,
                         endRowIndex: segmentRange.row.start - 1,
-                        startColumnIndex: segmentByIntenderRange.column.start - 1,
-                        endColumnIndex: segmentByIntenderRange.column.end
+                        startColumnIndex: 9,
+                        endColumnIndex: 13
                     },
                     mergeType: "MERGE_ROWS"
                 }
             },
-            {
+/*             {
                 mergeCells: {
                     range: {
-                        sheetId: tabId,
+                        sheetId,
                         startRowIndex: segmentRange.row.start - 2,
                         endRowIndex: segmentRange.row.start,
-                        startColumnIndex: segmentRange.column.start - 1,
-                        endColumnIndex: segmentRange.column.end
+                        startColumnIndex: 0,
+                        endColumnIndex: 5
                     },
                     mergeType: "MERGE_COLUMNS"
                 }
-            }
+            } */
         ];
 
         const styleRequests = [
-            {
+/*             {
                 repeatCell: {
                     range: {
-                        sheetId: tabId,
+                        sheetId: sheetId,
                         startRowIndex: segmentRange.row.start - 2,
                         endRowIndex: segmentRange.row.start,
-                        startColumnIndex: segmentRange.column.start - 1,
-                        endColumnIndex: segmentRange.column.end
+                        startColumnIndex: 0,
+                        endColumnIndex: 5
                     },
                     cell: {
                         userEnteredFormat: {
@@ -205,395 +229,15 @@ export const updateTabs = async (auth, countryDataByKey) => {
                     },
                     fields: "userEnteredFormat.verticalAlignment"
                 }
-            },
-            // Header
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: genderRange.row.start - 1,
-                        endRowIndex: genderRange.row.start,
-                        startColumnIndex: genderRange.column.start - 1,
-                        endColumnIndex: genderRange.column.end
-                    },
-                    ...styles.header
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: ageRange.row.start - 1,
-                        endRowIndex: ageRange.row.start,
-                        startColumnIndex: ageRange.column.start - 1,
-                        endColumnIndex: ageRange.column.end
-                    },
-                    ...styles.header
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: regionRange.row.start - 1,
-                        endRowIndex: regionRange.row.start,
-                        startColumnIndex: regionRange.column.start - 1,
-                        endColumnIndex: regionRange.column.end
-                    },
-                    ...styles.header
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: brandRange.row.start - 1,
-                        endRowIndex: brandRange.row.start,
-                        startColumnIndex: brandRange.column.start - 1,
-                        endColumnIndex: brandRange.column.end
-                    },
-                    ...styles.header
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: segmentRange.row.start - 2,
-                        endRowIndex: segmentRange.row.start,
-                        startColumnIndex: segmentRange.column.start - 1,
-                        endColumnIndex: segmentByIntenderRange.column.end
-                    },
-                    ...styles.header
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: brandByOwnerRange.row.start - 1,
-                        endRowIndex: brandByOwnerRange.row.start,
-                        startColumnIndex: brandByOwnerRange.column.start - 1,
-                        endColumnIndex: brandByOwnerRange.column.end
-                    },
-                    ...styles.header
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: segmentBoosterRange.row.start - 1,
-                        endRowIndex: segmentBoosterRange.row.start,
-                        startColumnIndex: segmentBoosterRange.column.start - 1,
-                        endColumnIndex: segmentBoosterRange.column.end
-                    },
-                    ...styles.header
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: evBoosterRange.row.start - 1,
-                        endRowIndex: evBoosterRange.row.start,
-                        startColumnIndex: evBoosterRange.column.start - 1,
-                        endColumnIndex: evBoosterRange.column.end
-                    },
-                    ...styles.header
-                }
-            },
-            // First column except header and footer
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: genderRange.row.start,
-                        endRowIndex: genderRange.row.end - 1,
-                        startColumnIndex: genderRange.column.start - 1,
-                        endColumnIndex: genderRange.column.start
-                    },
-                    ...styles.firstColumn
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: ageRange.row.start,
-                        endRowIndex: ageRange.row.end - 1,
-                        startColumnIndex: ageRange.column.start - 1,
-                        endColumnIndex: ageRange.column.start
-                    },
-                    ...styles.firstColumn
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: regionRange.row.start,
-                        endRowIndex: regionRange.row.end - 1,
-                        startColumnIndex: regionRange.column.start - 1,
-                        endColumnIndex: regionRange.column.start
-                    },
-                    ...styles.firstColumn
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: brandRange.row.start,
-                        endRowIndex: brandRange.row.end - 1,
-                        startColumnIndex: brandRange.column.start - 1,
-                        endColumnIndex: brandRange.column.start
-                    },
-                    ...styles.firstColumn
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: segmentRange.row.start,
-                        endRowIndex: segmentRange.row.end - 1,
-                        startColumnIndex: segmentRange.column.start - 1,
-                        endColumnIndex: segmentRange.column.start
-                    },
-                    ...styles.firstColumn
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: brandByOwnerRange.row.start,
-                        endRowIndex: brandByOwnerRange.row.end - 1,
-                        startColumnIndex: brandByOwnerRange.column.start - 1,
-                        endColumnIndex: brandByOwnerRange.column.start
-                    },
-                    ...styles.firstColumn
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: segmentBoosterRange.row.start,
-                        endRowIndex: segmentBoosterRange.row.end - 1,
-                        startColumnIndex: segmentBoosterRange.column.start - 1,
-                        endColumnIndex: segmentBoosterRange.column.start
-                    },
-                    ...styles.firstColumn
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: evBoosterRange.row.start,
-                        endRowIndex: evBoosterRange.row.end - 1,
-                        startColumnIndex: evBoosterRange.column.start - 1,
-                        endColumnIndex: evBoosterRange.column.start
-                    },
-                    ...styles.firstColumn
-                }
-            },
-            // Footer
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: genderRange.row.end - 1,
-                        endRowIndex: genderRange.row.end,
-                        startColumnIndex: genderRange.column.start - 1,
-                        endColumnIndex: genderRange.column.end
-                    },
-                    ...styles.footer
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: ageRange.row.end - 1,
-                        endRowIndex: ageRange.row.end,
-                        startColumnIndex: ageRange.column.start - 1,
-                        endColumnIndex: ageRange.column.end
-                    },
-                    ...styles.footer
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: regionRange.row.end - 1,
-                        endRowIndex: regionRange.row.end,
-                        startColumnIndex: regionRange.column.start - 1,
-                        endColumnIndex: regionRange.column.end
-                    },
-                    ...styles.footer
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: brandRange.row.end - 1,
-                        endRowIndex: brandRange.row.end,
-                        startColumnIndex: brandRange.column.start - 1,
-                        endColumnIndex: brandRange.column.end
-                    },
-                    ...styles.footer
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: segmentRange.row.end - 1,
-                        endRowIndex: segmentRange.row.end,
-                        startColumnIndex: segmentRange.column.start - 1,
-                        endColumnIndex: segmentByIntenderRange.column.end
-                    },
-                    ...styles.footer
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: brandByOwnerRange.row.end - 1,
-                        endRowIndex: brandByOwnerRange.row.end,
-                        startColumnIndex: brandByOwnerRange.column.start - 1,
-                        endColumnIndex: brandByOwnerRange.column.end
-                    },
-                    ...styles.footer
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: segmentBoosterRange.row.end - 1,
-                        endRowIndex: segmentBoosterRange.row.end,
-                        startColumnIndex: segmentBoosterRange.column.start - 1,
-                        endColumnIndex: segmentBoosterRange.column.end
-                    },
-                    ...styles.footer
-                }
-            },
-            {
-                repeatCell: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: evBoosterRange.row.end - 1,
-                        endRowIndex: evBoosterRange.row.end,
-                        startColumnIndex: evBoosterRange.column.start - 1,
-                        endColumnIndex: evBoosterRange.column.end
-                    },
-                    ...styles.footer
-                }
-            },
-            // Borders
-            {
-                updateBorders: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: genderRange.row.start - 1,
-                        endRowIndex: genderRange.row.end,
-                        startColumnIndex: genderRange.column.start - 1,
-                        endColumnIndex: genderRange.column.end
-                    },
-                    ...styles.borders
-                }
-            },
-            {
-                updateBorders: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: ageRange.row.start - 1,
-                        endRowIndex: ageRange.row.end,
-                        startColumnIndex: ageRange.column.start - 1,
-                        endColumnIndex: ageRange.column.end
-                    },
-                    ...styles.borders
-                }
-            },
-            {
-                updateBorders: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: regionRange.row.start - 1,
-                        endRowIndex: regionRange.row.end,
-                        startColumnIndex: regionRange.column.start - 1,
-                        endColumnIndex: regionRange.column.end
-                    },
-                    ...styles.borders
-                }
-            },
-            {
-                updateBorders: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: brandRange.row.start - 1,
-                        endRowIndex: brandRange.row.end,
-                        startColumnIndex: brandRange.column.start - 1,
-                        endColumnIndex: brandRange.column.end
-                    },
-                    ...styles.borders
-                }
-            },
-            {
-                updateBorders: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: segmentRange.row.start - 2,
-                        endRowIndex: segmentRange.row.end,
-                        startColumnIndex: segmentRange.column.start - 1,
-                        endColumnIndex: segmentByIntenderRange.column.end
-                    },
-                    ...styles.borders
-                }
-            },
-            {
-                updateBorders: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: brandByOwnerRange.row.start - 1,
-                        endRowIndex: brandByOwnerRange.row.end,
-                        startColumnIndex: brandByOwnerRange.column.start - 1,
-                        endColumnIndex: brandByOwnerRange.column.end
-                    },
-                    ...styles.borders
-                },
-            },
-            {
-                updateBorders: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: segmentBoosterRange.row.start - 1,
-                        endRowIndex: segmentBoosterRange.row.end,
-                        startColumnIndex: segmentBoosterRange.column.start - 1,
-                        endColumnIndex: segmentBoosterRange.column.end
-                    },
-                    ...styles.borders
-                }
-            },
-            {
-                updateBorders: {
-                    range: {
-                        sheetId: tabId,
-                        startRowIndex: evBoosterRange.row.start - 1,
-                        endRowIndex: evBoosterRange.row.end,
-                        startColumnIndex: evBoosterRange.column.start - 1,
-                        endColumnIndex: evBoosterRange.column.end
-                    },
-                    ...styles.borders
-                }
-            },
+            }, */
+            ...getStyleRequest(sheetId, genderRange),
+            ...getStyleRequest(sheetId, ageRange),
+            ...getStyleRequest(sheetId, regionRange),
+            ...getStyleRequest(sheetId, segmentRange),
+            ...getStyleRequest(sheetId, brandRange),
+            ...getStyleRequest(sheetId, brandByOwnerRange),
+            ...getStyleRequest(sheetId, segmentBoosterRange),
+            ...getStyleRequest(sheetId, evBoosterRange),
         ];
 
         return {
