@@ -14,6 +14,7 @@ const bodies = {
     ownerBrand: "CRUD=SELECT&COMMAND=GET_OWN_DATA&OWN=1&PKEY=",
 };
 
+const CAPITAL_ASCII_START = 65;
 const excludeCountries = [
     "2022_SA",
     "2022_EG",
@@ -22,6 +23,26 @@ const excludeCountries = [
     "2022_KZ",
     "2022_MA",
 ];
+
+const indexToChar = index => String.fromCharCode(CAPITAL_ASCII_START - 1 + index);
+const getRange = (rowStartIndex, columnStartIndex, rows) => {
+    const rowEndIndex = rows.length === 0 ? rowStartIndex : rowStartIndex - 1 + rows.length;
+    const columnEndIndex = columnStartIndex - 1 + (rows?.[0]?.length ?? 1);
+    const startColumn = indexToChar(columnStartIndex);
+    const endColumn = indexToChar(columnEndIndex);
+
+    return {
+        row: {
+            start: rowStartIndex,
+            end: rowEndIndex,
+        },
+        column: {
+            start: columnStartIndex,
+            end: columnEndIndex,
+        },
+        toString: () => `${startColumn}${rowStartIndex}:${endColumn}${rowEndIndex}`,
+    }
+}
 
 (async () => {
     const countries = (await request(bodies.getCountries))
@@ -33,36 +54,125 @@ const excludeCountries = [
         console.log(`Fetching data for ${country["country_name"]}...`);
 
         const key = country["PKEY"];
+        const tab = `${country["country_code"]}. ${key.split("_")[1]}`;
         const countryQuota = await getCountryWithCount(key);
         const countryQuotaSeries = await getCountryQuotaSeriesWithCount(key);
-        const ownerBrand = await getOwnerBrandTableRows(key, countryQuotaSeries);
+        const regionData = await getRegionData(key, countryQuota);
+        const ageData = await getAgeData(key, countryQuota);
 
-        const mainSegmentRows = getTableRows("Main Segment", getMainSegmentTotalData(countryQuota));
-        const mainSegmentByOwnerRows = getTableRows("Owner", getMainSegmentOwnerData(countryQuotaSeries), true)
-        const mainSegmentByIntenderRows = getTableRows("Intender", getMainSegmentIntenderData(countryQuotaSeries), true)
+        const genderRows = getTableRows("Gender", getGenderData(countryQuota));
+        const ageRows = getTableRows("Age", ageData);
+        const regionRows = getTableRows("Region", regionData);
+        const brandRows = getTableRows("Brand", getBrandData(countryQuota));
+        const ownerBrandRows = await getOwnerBrandTableRows(key, countryQuotaSeries);
+        const segmentBoosterRows = getTableRows("Seg Booster", getSegmentBooster(countryQuotaSeries));
+        const evBoosterRows = getTableRows("EV Booster", getEvBooster(countryQuotaSeries));
+        const mainSegmentRows = getTableRows("Main Segment", getMainSegmentTotalData(countryQuota), {addExtraHeader: true, extraHeaderTitle: "Total"});
+        const mainSegmentByOwnerRows = getTableRows("Owner", getMainSegmentOwnerData(countryQuotaSeries), {removeFirst: true, addExtraHeader: true, extraHeaderTitle: "Owner"})
+        const mainSegmentByIntenderRows = getTableRows("Intender", getMainSegmentIntenderData(countryQuotaSeries), {removeFirst: true, addExtraHeader: true, extraHeaderTitle: "Intender"});
 
-        const mainSegment = mainSegmentRows.reduce((previous, current, index) => {
-          return [
-            ...previous,
-            [
-              ...current,
-              ...(mainSegmentByOwnerRows?.[index] ?? []),
-              ...(mainSegmentByIntenderRows?.[index] ?? []),
-            ],
-          ];
-        }, []);
+        const genderRange = getRange(1, 1, genderRows);
+        const ageRange = getRange(genderRange.row.end + 2, 1, ageRows);
+        const regionRange = getRange(ageRange.row.end + 2, 1, regionRows)
+        const brandRange = getRange(1, genderRange.column.end + 2, brandRows);
+        const mainSegmentRange = getRange(regionRange.row.end + 2, 1, mainSegmentRows);
+        const mainSegmentByOwnerRange = getRange(mainSegmentRange.row.start, mainSegmentRange.column.end + 1, mainSegmentByOwnerRows);
+        const mainSegmentByIntenderRange = getRange(mainSegmentRange.row.start, mainSegmentByOwnerRange.column.end + 1, mainSegmentByIntenderRows);
+        const ownerBrandRange = getRange(mainSegmentRange.row.end + 2, 1, ownerBrandRows);
+        const segmentBoosterRange = getRange(ownerBrandRange.row.end + 2, 1, segmentBoosterRows);
+        const evBoosterRange = getRange(segmentBoosterRange.row.end + 2, 1, evBoosterRows);
 
         countryDataByKey[key] = {
-            tab: `${country["country_code"]}. ${key.split("_")[1]}`,
+            tab,
             tables: {
-                region: getTableRows("Region", await getRegionData(key, countryQuota)),
-                age: getTableRows("Age", await getAgeData(key, countryQuota)),
-                gender: getTableRows("Gender", getGenderData(countryQuota)),
-                brand: getTableRows("Brand", getBrandData(countryQuota)),
-                mainSegment: mainSegment,
-                segmentBooster: getTableRows("Seg Booster", getSegmentBooster(countryQuotaSeries)),
-                evBooster: getTableRows("EV Booster", getEvBooster(countryQuotaSeries)),
-                ownerBrand,
+                region: {
+                    range: regionRange,
+                    rows: regionRows,
+                },
+                age: {
+                    range: ageRange,
+                    rows: ageRows,
+                },
+                gender: {
+                    range: genderRange,
+                    rows: genderRows,
+                },
+                brand: {
+                    range: brandRange,
+                    rows: brandRows,
+                },
+                segmentBooster: {
+                    range: segmentBoosterRange,
+                    rows: segmentBoosterRows,
+                },
+                evBooster: {
+                    range: evBoosterRange,
+                    rows: evBoosterRows,
+                },
+                mainSegment: {
+                    range: mainSegmentRange,
+                    rows: mainSegmentRows,
+                    styleOptions: {
+                        top: {
+                            size: 2,
+                        }
+                    },
+                    merges: [{
+                        mergeType: "MERGE_ROWS",
+                        range: {
+                            startRowIndex: mainSegmentRange.row.start - 1,
+                            endRowIndex: mainSegmentRange.row.start,
+                            startColumnIndex: mainSegmentRange.column.start - 1,
+                            endColumnIndex: mainSegmentRange.column.end,                            
+                        }
+                    }]
+                },
+                mainSegmentByOwner: {
+                    range: mainSegmentByOwnerRange,
+                    rows: mainSegmentByOwnerRows,
+                    styleOptions: {
+                        top: {
+                            size: 2,
+                        },
+                        left: {
+                            hasStyle: false,
+                        }
+                    },
+                    merges: [{
+                        mergeType: "MERGE_ROWS",
+                        range: {
+                            startRowIndex: mainSegmentByOwnerRange.row.start - 1,
+                            endRowIndex: mainSegmentByOwnerRange.row.start,
+                            startColumnIndex: mainSegmentByOwnerRange.column.start - 1,
+                            endColumnIndex: mainSegmentByOwnerRange.column.end,                            
+                        }
+                    }]
+                },
+                mainSegmentByIntender: {
+                    range: mainSegmentByIntenderRange,
+                    rows: mainSegmentByIntenderRows,
+                    styleOptions: {
+                        top: {
+                            size: 2,
+                        },
+                        left: {
+                            hasStyle: false,
+                        }
+                    },
+                    merges: [{
+                        mergeType: "MERGE_ROWS",
+                        range: {
+                            startRowIndex: mainSegmentByIntenderRange.row.start - 1,
+                            endRowIndex: mainSegmentByIntenderRange.row.start,
+                            startColumnIndex: mainSegmentByIntenderRange.column.start - 1,
+                            endColumnIndex: mainSegmentByIntenderRange.column.end,                            
+                        }
+                    }]
+                },
+                ownerBrand: {
+                    range: ownerBrandRange,
+                    rows: ownerBrandRows,
+                },
             }
         };
     }
@@ -220,11 +330,18 @@ async function getOwnerBrandTableRows(key, countryQuotaSeries) {
     return tableRows;
 }
 
-function getTableRows(name, rows, removeFirst = false) {
+function getTableRows(name, rows, options = {}) {
+    options = {
+        removeFirst: options?.removeFirst ?? false,
+        addExtraHeader: options?.addExtraHeader ?? false,
+        extraHeaderTitle: options?.extraHeaderTitle ?? "Title",
+    };
+
     let quotaSum = 0;
     let achievedSum = 0;
 
     const tableRows = [
+        ...options.addExtraHeader ? [Array.from({length: 5}).fill(options.extraHeaderTitle)] : [],
         [`- ${name}`, "Quota", "Achie.(N)", "Achie.(%)", "Remaining"],
         ...rows.map(row => {
             const {ANS, LABEL, COM_CNT, ORI_CNT} = row;
@@ -240,7 +357,7 @@ function getTableRows(name, rows, removeFirst = false) {
         ["Total", quotaSum, achievedSum, toPercent(achievedSum, quotaSum), quotaSum - achievedSum],
     ];
 
-    if (removeFirst) {
+    if (options.removeFirst) {
         tableRows.forEach(row => row.shift());
     }
 
