@@ -282,7 +282,7 @@ function getSegmentBooster(countryQuotaSeries) {
 }
 
 function getEvBooster(countryQuotaSeries) {
-    return countryQuotaSeries.filter(row => row["QSORDER"] === "6");
+    return countryQuotaSeries.filter(row => row["QSORDER"] === "6" || row["QSORDER"] === "7");
 }
 
 async function getOwnerBrandTableRows(key, countryQuotaSeries) {
