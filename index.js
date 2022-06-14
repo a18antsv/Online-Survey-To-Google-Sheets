@@ -41,7 +41,7 @@ const getRange = (rowStartIndex, columnStartIndex, rows) => {
     }
 }
 
-(async () => {
+const main = async auth => {
     const countries = (await request(bodies.getCountries))
         .filter(country => includeCountries.includes(country["PKEY"]));
 
@@ -174,10 +174,10 @@ const getRange = (rowStartIndex, columnStartIndex, rows) => {
         };
     }
 
-    readCredentialsAndAuthorize(auth => {
-        updateTabs(auth, countryDataByKey);
-    });
-})();
+    updateTabs(auth, countryDataByKey);
+}
+
+readCredentialsAndAuthorize(main);
 
 async function getCountryWithCount(key) {
     const countryQuota = await request(bodies.getCountryQuota + key);
