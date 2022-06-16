@@ -16,6 +16,7 @@ const bodies = {
     getConvertAge: "CRUD=SELECT&COMMAND=GET_CONVERT_AGE&PKEY=",
     getConvertRegion: "CRUD=SELECT&COMMAND=GET_CONVERT_REGION&PKEY=",
     ownerBrand: "CRUD=SELECT&COMMAND=GET_OWN_DATA&OWN=1&PKEY=",
+    getChinaRegion: "CRUD=SELECT&COMMAND=GET_CHINA_REGION",
 };
 
 const CAPITAL_ASCII_START = 65;
@@ -54,7 +55,9 @@ const main = async auth => {
         const tab = `${country["country_code"]}. ${key.split("_")[1]}`;
         const countryQuota = await getCountryWithCount(key);
         const countryQuotaSeries = await getCountryQuotaSeriesWithCount(key);
-        const regionData = await getRegionData(key, countryQuota);
+        const regionData = key === "2022_CN"
+            ? await getChinaRegionData(countryQuota)
+            : await getRegionData(key, countryQuota);
         const ageData = await getAgeData(key, countryQuota);
         
         const genderRows = getTableRows("Gender", getGenderData(countryQuota));
@@ -252,6 +255,17 @@ async function getRegionData(key, countryQuota) {
                     : previous;
             }, 0);
 
+            return row;
+        });
+}
+
+async function getChinaRegionData(countryQuota) {
+    const chinaRegionRows = await request(bodies.getChinaRegion);
+
+    return countryQuota
+        .filter(row => row["QID"] === "Q7")
+        .map(row => {
+            row["COM_CNT"] = chinaRegionRows.find(regionRow => regionRow["QUOTA"] === row["ANS"])?.["COM_CNT"] ?? 0;
             return row;
         });
 }
