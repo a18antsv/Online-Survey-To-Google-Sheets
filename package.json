@@ -1,20 +1,23 @@
 {
-  "name": "testing",
+  "name": "ts-test",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc",
+    "start": "node ./build/index.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "module",
+  "devDependencies": {
+    "@types/node": "^20.2.5",
+    "typescript": "^5.0.4"
+  },
   "dependencies": {
-    "after-load": "^1.0.4",
-    "dotenv": "^16.0.1",
-    "google-spreadsheet": "^3.3.0",
+    "dotenv": "^16.1.4",
     "googleapis": "^100.0.0",
-    "node-fetch": "^3.2.4"
+    "node-fetch": "^3.3.1"
   }
 }
