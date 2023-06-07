@@ -244,37 +244,13 @@ const main = async (): Promise<void> => {
         const regionTableRows = getBasicTableRows('Region', regionData);
         const regionArea = getArea(ageArea.row.end + 2, 1, regionTableRows.length, 5);
 
-        const mainBrandData = await apiCall<MainData[]>("/subOwnTable", new Map([
-            ['isTest', TEST],
-            ['pkey', country.PKEY],
-            ['qsString', 'Brand'],
-        ]));
-        const mainBrandTableRows = getMainTableRows('Main - Brand', mainBrandData);
-        const mainBrandArea = getArea(1, genderArea.column.end + 2, mainBrandTableRows.length, 13);
-
-        const mainSegmentData = (await apiCall<MainData[]>("/subOwnTable", new Map([
-            ['isTest', TEST],
-            ['pkey', country.PKEY],
-            ['qsString', 'Seg_Quota'],
-        ])));
-        const mainSegmentTableRows = getMainTableRows('Main - Segment', mainSegmentData);
-        const mainSegmentArea = getArea(mainBrandArea.row.end + 2, genderArea.column.end + 2, mainSegmentTableRows.length, 13);
-
-        const mainEngineData = (await apiCall<MainData[]>("/subOwnTable", new Map([
-            ['isTest', TEST],
-            ['pkey', country.PKEY],
-            ['qsString', 'Engine'],
-        ])));
-        const mainEngineTableRows = getMainTableRows('Main - Engine', mainEngineData);
-        const mainEngineArea = getArea(mainSegmentArea.row.end + 2, genderArea.column.end + 2, mainEngineTableRows.length, 13);
-
         const teslaData = (await apiCall<EvData[]>("/evTable", new Map([
             ['isTest', TEST],
             ['pkey', country.PKEY],
             ['qsString', 'Tesla'],
         ])));
         const evTeslaTableRows = getEvTableRows('Tesla Count', teslaData);
-        const evTeslaArea = getArea(mainEngineArea.row.end + 2, 1, evTeslaTableRows.length, 9);
+        const evTeslaArea = getArea(1, genderArea.column.end + 2, evTeslaTableRows.length, 9);
 
         const evData = (await apiCall<EvData[]>("/evTable", new Map([
             ['isTest', TEST],
@@ -282,7 +258,31 @@ const main = async (): Promise<void> => {
             ['qsString', 'EV'],
         ])));
         const evTableRows = getEvTableRows('EV Count', evData);
-        const evArea = getArea(evTeslaArea.row.end + 2, 1, evTableRows.length, 9);
+        const evArea = getArea(evTeslaArea.row.end + 2, genderArea.column.end + 2, evTableRows.length, 9);
+
+        const mainBrandData = await apiCall<MainData[]>("/subOwnTable", new Map([
+            ['isTest', TEST],
+            ['pkey', country.PKEY],
+            ['qsString', 'Brand'],
+        ]));
+        const mainBrandTableRows = getMainTableRows('Main - Brand', mainBrandData);
+        const mainBrandArea = getArea(Math.max(regionArea.row.end, evArea.row.end) + 2, 1, mainBrandTableRows.length, 13);
+
+        const mainSegmentData = (await apiCall<MainData[]>("/subOwnTable", new Map([
+            ['isTest', TEST],
+            ['pkey', country.PKEY],
+            ['qsString', 'Seg_Quota'],
+        ])));
+        const mainSegmentTableRows = getMainTableRows('Main - Segment', mainSegmentData);
+        const mainSegmentArea = getArea(mainBrandArea.row.end + 2, 1, mainSegmentTableRows.length, 13);
+
+        const mainEngineData = (await apiCall<MainData[]>("/subOwnTable", new Map([
+            ['isTest', TEST],
+            ['pkey', country.PKEY],
+            ['qsString', 'Engine'],
+        ])));
+        const mainEngineTableRows = getMainTableRows('Main - Engine', mainEngineData);
+        const mainEngineArea = getArea(mainSegmentArea.row.end + 2, 1, mainEngineTableRows.length, 13);
 
         const sheet: SheetData = {
             sheetName: sheetName,
@@ -290,16 +290,16 @@ const main = async (): Promise<void> => {
                 {
                     area: genderArea,
                     rows: genderTableRows,
-                    updateBorderRequests: [
-                        {
-                            range: {
-                                startColumnIndex: genderArea.column.start - 1,
-                                endColumnIndex: genderArea.column.end,
-                                startRowIndex: genderArea.row.start - 1,
-                                endRowIndex: genderArea.row.end,
-                            },
-                        }
-                    ]
+                    // updateBorderRequests: [
+                    //     {
+                    //         range: {
+                    //             startColumnIndex: genderArea.column.start - 1,
+                    //             endColumnIndex: genderArea.column.end,
+                    //             startRowIndex: genderArea.row.start - 1,
+                    //             endRowIndex: genderArea.row.end,
+                    //         },
+                    //     }
+                    // ]
                 },
                 {
                     area: ageArea,

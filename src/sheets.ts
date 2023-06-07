@@ -32,8 +32,9 @@ const getSpreadsheet = async (): Promise<Schema$Spreadsheet> => {
 }
 
 const addSheets = async (sheetNames: string[], spreadsheet: Schema$Spreadsheet): Promise<Schema$Spreadsheet> => {
+    const availableSheetNames = spreadsheet.sheets?.map(sheet => sheet.properties?.title) ?? [];
     const addSheetRequests = sheetNames
-        .filter(sheetName => spreadsheet.sheets?.some(sheet => sheet.properties?.title !== sheetName))
+        .filter(sheetName => !availableSheetNames.includes(sheetName))
         .map<Schema$Request>(sheetName => ({
             addSheet: {
                 properties: {
@@ -118,22 +119,22 @@ export const updateSheets = async (sheets: SheetData[]): Promise<void> => {
     const mergeRequests = getMergeRequests(sheets, sheetIdByName);
     const borderRequests = getUpdateBorderRequests(sheets, sheetIdByName);
 
-    await handler(api.spreadsheets.values.batchUpdate({
+    const {error: valueRequestError} = await handler(api.spreadsheets.values.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
         requestBody: {
             valueInputOption: 'USER_ENTERED',
             data: valueRequests,
         }
-    }))
+    }));
+    if (valueRequestError) throw new Error('Value request error', {cause: valueRequestError});
 
-    console.log(JSON.stringify(borderRequests));
-
-    await handler(api.spreadsheets.batchUpdate({
+    const {error: formatRequestError} = await handler(api.spreadsheets.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
         requestBody: {
             requests: [...mergeRequests, ...borderRequests],
         }
-    }))
+    }));
+    if (formatRequestError) throw new Error('Format request error', {cause: formatRequestError});
 
     console.log('Updated tabs successfully!');
 }
