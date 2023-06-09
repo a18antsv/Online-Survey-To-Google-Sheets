@@ -13,7 +13,7 @@ const TEST = '1A08T3GA';
 const pKeysToInclude: string[] = FILTER_IN?.split(",").map(countryCode => `2023_${countryCode}`) ?? [];
 const CAPITAL_ASCII_START = 65;
 
-const indexToChar = (index: number): string => String.fromCharCode(CAPITAL_ASCII_START - 1 + index);
+const indexToChar = (index: number): string => String.fromCharCode(CAPITAL_ASCII_START + index);
 
 interface Range {
     start: number;
@@ -23,7 +23,7 @@ interface Range {
 interface Area {
     row: Range;
     column: Range;
-    toString: () => string
+    a1Notation: string,
 }
 
 export interface SheetData {
@@ -39,27 +39,33 @@ interface TableData {
 }
 
 const getArea = (
-    rowStartIndex: number,
-    columnStartIndex: number,
-    rowCount: number,
-    columnCount: number,
+    {
+        startColumnIndex,
+        startRowIndex,
+        columnCount,
+        rowCount,
+    }: {
+        startColumnIndex: number,
+        startRowIndex: number,
+        columnCount: number,
+        rowCount: number,
+    }
 ): Area => {
-    const rowEndIndex = rowCount === 0 ? rowStartIndex : rowStartIndex - 1 + rowCount;
-    const columnEndIndex = columnStartIndex - 1 + columnCount;
-    const startColumn = indexToChar(columnStartIndex);
-    const endColumn = indexToChar(columnEndIndex);
+    const column: Range = {
+        start: startColumnIndex,
+        end: startColumnIndex + columnCount,
+    };
+
+    const row: Range = {
+        start: startRowIndex,
+        end: startRowIndex + rowCount,
+    };
 
     return {
-        row: {
-            start: rowStartIndex,
-            end: rowEndIndex,
-        },
-        column: {
-            start: columnStartIndex,
-            end: columnEndIndex,
-        },
-        toString: () => `${startColumn}${rowStartIndex}:${endColumn}${rowEndIndex}`,
-    }
+        column,
+        row,
+        a1Notation: `${indexToChar(column.start)}${row.start + 1}:${indexToChar(column.end - 1)}${row.end}`
+    };
 }
 
 const toPercent = (part: number, whole: number): string => {
@@ -76,7 +82,7 @@ const getBasicTableRows = (name: string, rows: BasicData[]): (string | number)[]
             row.Total_Cnt,
             row.Total_Complete,
             `${row.Total_Percent}%`,
-            Math.max(0, row.Total_Cnt - row.Total_Complete),
+            row.Total_Cnt - row.Total_Complete,
         ]),
     ];
 }
@@ -92,7 +98,7 @@ const getEvTableRows = (name: string, rows: EvData[]): (string | number)[][] => 
                 row.Total_cnt,
                 totalComplete,
                 toPercent(totalComplete, row.Total_cnt),
-                Math.max(0, row.Total_cnt - totalComplete),
+                row.Total_cnt - totalComplete,
                 row.Ownner_Complete,
                 `${row.Ownner_Percent}%`,
                 row.Intender_Complete,
@@ -111,15 +117,15 @@ const getMainTableRows = (name: string, rows: MainData[]): (string | number)[][]
             row.Total_cnt,
             row.Total_Complete,
             `${row.Total_Percent}%`,
-            Math.max(0, row.Total_cnt - row.Total_Complete),
+            row.Total_cnt - row.Total_Complete,
             row.Ownner_Cnt,
             row.Ownner_Complete,
             `${row.Ownner_Percent}%`,
-            Math.max(0, row.Ownner_Cnt - row.Ownner_Complete),
+            row.Ownner_Cnt - row.Ownner_Complete,
             row.Intender_Cnt,
             row.Intender_Complete,
             `${row.Intender_Percent}%`,
-            Math.max(0, row.Intender_Cnt - row.Intender_Complete),
+            row.Intender_Cnt - row.Intender_Complete,
         ]),
     ];
 }
@@ -129,37 +135,37 @@ const getEvMergeRequests = (area: Area): Schema$MergeCellsRequest[] => {
         {
             mergeType: 'MERGE_COLUMNS',
             range: {
-                startColumnIndex: area.column.start - 1,
-                endColumnIndex: area.column.start,
-                startRowIndex: area.row.start - 1,
+                startColumnIndex: area.column.start,
+                endColumnIndex: area.column.start + 1,
+                startRowIndex: area.row.start,
+                endRowIndex: area.row.start + 2,
+            }
+        },
+        {
+            mergeType: 'MERGE_ROWS',
+            range: {
+                startColumnIndex: area.column.start + 1,
+                endColumnIndex: area.column.start + 5,
+                startRowIndex: area.row.start,
                 endRowIndex: area.row.start + 1,
             }
         },
         {
             mergeType: 'MERGE_ROWS',
             range: {
-                startColumnIndex: area.column.start,
-                endColumnIndex: area.column.start + 4,
-                startRowIndex: area.row.start - 1,
-                endRowIndex: area.row.start,
+                startColumnIndex: area.column.start + 5,
+                endColumnIndex: area.column.start + 7,
+                startRowIndex: area.row.start,
+                endRowIndex: area.row.start + 1,
             }
         },
         {
             mergeType: 'MERGE_ROWS',
             range: {
-                startColumnIndex: area.column.start + 4,
-                endColumnIndex: area.column.start + 6,
-                startRowIndex: area.row.start - 1,
-                endRowIndex: area.row.start,
-            }
-        },
-        {
-            mergeType: 'MERGE_ROWS',
-            range: {
-                startColumnIndex: area.column.start + 6,
-                endColumnIndex: area.column.start + 8,
-                startRowIndex: area.row.start - 1,
-                endRowIndex: area.row.start,
+                startColumnIndex: area.column.start + 7,
+                endColumnIndex: area.column.start + 9,
+                startRowIndex: area.row.start,
+                endRowIndex: area.row.start + 1,
             }
         },
     ];
@@ -170,37 +176,37 @@ const getMainMergeRequests = (area: Area): Schema$MergeCellsRequest[] => {
         {
             mergeType: 'MERGE_COLUMNS',
             range: {
-                startColumnIndex: area.column.start - 1,
-                endColumnIndex: area.column.start,
-                startRowIndex: area.row.start - 1,
+                startColumnIndex: area.column.start,
+                endColumnIndex: area.column.start + 1,
+                startRowIndex: area.row.start,
+                endRowIndex: area.row.start + 2,
+            }
+        },
+        {
+            mergeType: 'MERGE_ROWS',
+            range: {
+                startColumnIndex: area.column.start + 1,
+                endColumnIndex: area.column.start + 5,
+                startRowIndex: area.row.start,
                 endRowIndex: area.row.start + 1,
             }
         },
         {
             mergeType: 'MERGE_ROWS',
             range: {
-                startColumnIndex: area.column.start,
-                endColumnIndex: area.column.start + 4,
-                startRowIndex: area.row.start - 1,
-                endRowIndex: area.row.start,
+                startColumnIndex: area.column.start + 5,
+                endColumnIndex: area.column.start + 9,
+                startRowIndex: area.row.start,
+                endRowIndex: area.row.start + 1,
             }
         },
         {
             mergeType: 'MERGE_ROWS',
             range: {
-                startColumnIndex: area.column.start + 4,
-                endColumnIndex: area.column.start + 8,
-                startRowIndex: area.row.start - 1,
-                endRowIndex: area.row.start,
-            }
-        },
-        {
-            mergeType: 'MERGE_ROWS',
-            range: {
-                startColumnIndex: area.column.start + 8,
-                endColumnIndex: area.column.start + 12,
-                startRowIndex: area.row.start - 1,
-                endRowIndex: area.row.start,
+                startColumnIndex: area.column.start + 9,
+                endColumnIndex: area.column.start + 13,
+                startRowIndex: area.row.start,
+                endRowIndex: area.row.start + 1,
             }
         },
     ];
@@ -226,7 +232,13 @@ const main = async (): Promise<void> => {
             ['qsString', 'Gender'],
         ])));
         const genderTableRows = getBasicTableRows('Gender', genderData);
-        const genderArea = getArea(1, 1, genderTableRows.length, 5);
+
+        const genderArea = getArea({
+            startColumnIndex: 0,
+            startRowIndex: 0,
+            columnCount: genderTableRows[0]?.length ?? 0,
+            rowCount: genderTableRows.length,
+        });
 
         const ageData = (await apiCall<BasicData[]>("/basicTable", new Map([
             ['isTest', TEST],
@@ -234,7 +246,12 @@ const main = async (): Promise<void> => {
             ['qsString', 'Age'],
         ])));
         const ageTableRows = getBasicTableRows('Age', ageData);
-        const ageArea = getArea(genderArea.row.end + 2, 1, ageTableRows.length, 5);
+        const ageArea = getArea({
+            startColumnIndex: 0,
+            startRowIndex: genderArea.row.end + 1,
+            columnCount: ageTableRows[0]?.length ?? 0,
+            rowCount: ageTableRows.length,
+        });
 
         const regionData = (await apiCall<BasicData[]>("/basicTable", new Map([
             ['isTest', TEST],
@@ -242,7 +259,12 @@ const main = async (): Promise<void> => {
             ['qsString', 'Region'],
         ])));
         const regionTableRows = getBasicTableRows('Region', regionData);
-        const regionArea = getArea(ageArea.row.end + 2, 1, regionTableRows.length, 5);
+        const regionArea = getArea({
+            startColumnIndex: 0,
+            startRowIndex: ageArea.row.end + 1,
+            columnCount: regionTableRows[0]?.length ?? 0,
+            rowCount: regionTableRows.length,
+        });
 
         const teslaData = (await apiCall<EvData[]>("/evTable", new Map([
             ['isTest', TEST],
@@ -250,7 +272,12 @@ const main = async (): Promise<void> => {
             ['qsString', 'Tesla'],
         ])));
         const evTeslaTableRows = getEvTableRows('Tesla Count', teslaData);
-        const evTeslaArea = getArea(1, genderArea.column.end + 2, evTeslaTableRows.length, 9);
+        const evTeslaArea = getArea({
+            startColumnIndex: genderArea.column.end + 1,
+            startRowIndex: 0,
+            columnCount: evTeslaTableRows[0]?.length ?? 0,
+            rowCount: evTeslaTableRows.length,
+        });
 
         const evData = (await apiCall<EvData[]>("/evTable", new Map([
             ['isTest', TEST],
@@ -258,7 +285,12 @@ const main = async (): Promise<void> => {
             ['qsString', 'EV'],
         ])));
         const evTableRows = getEvTableRows('EV Count', evData);
-        const evArea = getArea(evTeslaArea.row.end + 2, genderArea.column.end + 2, evTableRows.length, 9);
+        const evArea = getArea({
+            startColumnIndex: evTeslaArea.column.start,
+            startRowIndex: evTeslaArea.row.end + 1,
+            columnCount: evTableRows[0]?.length ?? 0,
+            rowCount: evTableRows.length,
+        });
 
         const mainBrandData = await apiCall<MainData[]>("/subOwnTable", new Map([
             ['isTest', TEST],
@@ -266,7 +298,13 @@ const main = async (): Promise<void> => {
             ['qsString', 'Brand'],
         ]));
         const mainBrandTableRows = getMainTableRows('Main - Brand', mainBrandData);
-        const mainBrandArea = getArea(Math.max(regionArea.row.end, evArea.row.end) + 2, 1, mainBrandTableRows.length, 13);
+
+        const mainBrandArea = getArea({
+            startColumnIndex: 0,
+            startRowIndex: Math.max(regionArea.row.end, evArea.row.end) + 1,
+            columnCount: mainBrandTableRows[0]?.length ?? 0,
+            rowCount: mainBrandTableRows.length,
+        });
 
         const mainSegmentData = (await apiCall<MainData[]>("/subOwnTable", new Map([
             ['isTest', TEST],
@@ -274,7 +312,12 @@ const main = async (): Promise<void> => {
             ['qsString', 'Seg_Quota'],
         ])));
         const mainSegmentTableRows = getMainTableRows('Main - Segment', mainSegmentData);
-        const mainSegmentArea = getArea(mainBrandArea.row.end + 2, 1, mainSegmentTableRows.length, 13);
+        const mainSegmentArea = getArea({
+            startColumnIndex: 0,
+            startRowIndex: mainBrandArea.row.end + 1,
+            columnCount: mainSegmentTableRows[0]?.length ?? 0,
+            rowCount: mainSegmentTableRows.length,
+        });
 
         const mainEngineData = (await apiCall<MainData[]>("/subOwnTable", new Map([
             ['isTest', TEST],
@@ -282,7 +325,12 @@ const main = async (): Promise<void> => {
             ['qsString', 'Engine'],
         ])));
         const mainEngineTableRows = getMainTableRows('Main - Engine', mainEngineData);
-        const mainEngineArea = getArea(mainSegmentArea.row.end + 2, 1, mainEngineTableRows.length, 13);
+        const mainEngineArea = getArea({
+            startColumnIndex: 0,
+            startRowIndex: mainSegmentArea.row.end + 1,
+            columnCount: mainEngineTableRows[0]?.length ?? 0,
+            rowCount: mainEngineTableRows.length,
+        });
 
         const sheet: SheetData = {
             sheetName: sheetName,

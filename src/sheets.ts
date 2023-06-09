@@ -69,7 +69,7 @@ const getSheetIdByName = (sheetNames: string[], spreadsheet: Schema$Spreadsheet)
 const getValueRequests = (sheets: SheetData[]): Schema$ValueRange[] => {
     return sheets.flatMap(sheet => {
         return sheet.tables.map(table => ({
-            range: `'${sheet.sheetName}'!${table.area.toString()}`,
+            range: `'${sheet.sheetName}'!${table.area.a1Notation}`,
             values: table.rows,
         } satisfies Schema$ValueRange))
     });
